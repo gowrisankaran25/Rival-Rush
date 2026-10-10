@@ -64,7 +64,7 @@ export function createSpeedPlan(
     control.accelerating !== undefined || control.braking !== undefined || brakePressure > 0;
 
   if (!control.active) targetSpeed = 0;
-  const assistMessage = describeAssist(control, curveSpeedLimit, leadDistance, leadIsIncoming);
+  const assistMessage = describeAssist(control, curveSpeedLimit, leadDistance, leadIsIncoming, currentSpeed);
   let safetyBraking = targetSpeed < currentSpeed - 0.35;
   let acceleration: number;
 
@@ -125,6 +125,7 @@ function describeAssist(
   curveSpeedLimit: number,
   leadDistance: number,
   leadIsIncoming: boolean,
+  currentSpeed: number,
 ): string {
   const brakePressure = getBrakePressure(control);
   const manualControl =
