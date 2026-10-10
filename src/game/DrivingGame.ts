@@ -56,8 +56,6 @@ const ROAD_UPDATE_INTERVAL = 1 / 30;
 const IDLE_RENDER_INTERVAL_MS = 200;
 
 // ── Immersive cockpit camera constants ──
-const COCKPIT_CAM_BACK = 0.2;       // How far behind player center (inside cabin)
-const COCKPIT_CAM_HEIGHT = 1.35;    // Eye height above road
 const COCKPIT_LOOK_AHEAD = 18;      // Look-at distance forward
 const COCKPIT_LOOK_HEIGHT = 0.9;    // Look-at height
 const BASE_FOV = 72;                // Wide FOV for immersion
@@ -129,7 +127,6 @@ export class DrivingGame {
   private speedLineParticles?: THREE.LineSegments;
   private speedLinePositions?: Float32Array;
   private speedLineVelocities?: Float32Array;
-  private cockpitOverlay?: HTMLDivElement;
   private currentFov = BASE_FOV;
   private cameraMode = 0; // 0: Cockpit, 1: Hood, 2: Chase
 
@@ -406,7 +403,6 @@ export class DrivingGame {
     this.roadsideFences.dispose();
     this.textureStore.dispose();
     this.renderer.dispose();
-    this.cockpitOverlay?.remove();
   }
 
   private setupWorld(): void {
@@ -1277,53 +1273,5 @@ export class DrivingGame {
 
     const posAttr = this.weatherParticles.geometry.getAttribute('position') as THREE.BufferAttribute;
     posAttr.needsUpdate = true;
-  }
-
-  // ══════════════════════════════════════════════════
-  //   IMMERSIVE COCKPIT – Glass Windshield Overlay
-  // ══════════════════════════════════════════════════
-
-  private initCockpitOverlay(): void {
-    const overlay = document.createElement('div');
-    overlay.className = 'cockpit-glass-overlay';
-    overlay.setAttribute('aria-hidden', 'true');
-    overlay.innerHTML = `
-      <div class="cockpit-pillar cockpit-pillar-left"></div>
-      <div class="cockpit-pillar cockpit-pillar-right"></div>
-      <div class="cockpit-windshield-top"></div>
-      <div class="cockpit-dashboard"></div>
-      <div class="cockpit-reflection"></div>
-      <div class="cockpit-vignette"></div>
-      <div class="cockpit-speed-blur"></div>
-      <div class="cockpit-rain-dots"></div>
-    `;
-    this.container.appendChild(overlay);
-    this.cockpitOverlay = overlay;
-  }
-
-  private updateCockpitOverlay(speedRatio: number): void {
-    if (!this.cockpitOverlay) return;
-
-    // Vignette intensifies with speed
-    const vignette = this.cockpitOverlay.querySelector('.cockpit-vignette') as HTMLElement;
-    if (vignette) {
-      const vignetteOpacity = 0.25 + speedRatio * 0.45;
-      vignette.style.opacity = vignetteOpacity.toString();
-    }
-
-    // Speed blur edges intensify with speed
-    const speedBlur = this.cockpitOverlay.querySelector('.cockpit-speed-blur') as HTMLElement;
-    if (speedBlur) {
-      const blurOpacity = clamp((speedRatio - 0.4) / 0.5, 0, 0.55);
-      speedBlur.style.opacity = blurOpacity.toString();
-    }
-
-    // Reflection moves subtly with steering
-    const reflection = this.cockpitOverlay.querySelector('.cockpit-reflection') as HTMLElement;
-    if (reflection) {
-      const reflectOffset = this.steeringVisual * 12;
-      reflection.style.transform = `translateX(${reflectOffset}%) rotate(${-this.steeringVisual * 3}deg)`;
-      reflection.style.opacity = (0.06 + speedRatio * 0.04).toString();
-    }
   }
 }
