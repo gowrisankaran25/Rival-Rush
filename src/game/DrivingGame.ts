@@ -461,34 +461,7 @@ export class DrivingGame {
     inactive.rotationY = 0;
   }
 
-  private spawnInitialTraffic(): void {
-    let ongoingSpawnCursor = 45;
-    let incomingSpawnCursor = 62;
-    for (let index = 0; index < GAME.trafficCount; index += 1) {
-      const direction: 1 | -1 = index === 0 ? 1 : index === 1 ? -1 : Math.random() < 0.56 ? 1 : -1;
-      const car: TrafficCar = {
-        mesh: new THREE.Group(),
-        distance: 0,
-        lane: direction === 1 ? 0 : 1,
-        laneOffset: 0,
-        speed: 0,
-        targetSpeed: 0,
-        speedChangeTimer: 0,
-        direction,
-        counted: false,
-        horned: false,
-      };
-      if (direction === 1) {
-        ongoingSpawnCursor += 34 + Math.random() * 48;
-        this.spawnTraffic(car, ongoingSpawnCursor);
-      } else {
-        incomingSpawnCursor += 38 + Math.random() * 58;
-        this.spawnTraffic(car, incomingSpawnCursor);
-      }
-      this.traffic.push(car);
-      this.scene.add(car.mesh);
-    }
-  }
+
 
   private setTrafficCount(requestedCount: number): void {
     const trafficCount = Math.round(clamp(requestedCount, 0, GAME.trafficCount));

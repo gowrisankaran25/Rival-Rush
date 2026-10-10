@@ -10,6 +10,7 @@ describe('scene shadow tracking', () => {
     const lighting: SceneLighting = {
       sun,
       target,
+      hemisphere: new THREE.HemisphereLight(),
       visual: new THREE.Group(),
     };
 
