@@ -62,7 +62,8 @@ export class EngineSound {
     }
 
     this.oscillator.frequency.setTargetAtTime(baseFreq + speedKph * freqMultiplier, this.context.currentTime, 0.08);
-    const volume = this.enabled && speedKph > 1 ? volumeMax + speedKph / 9000 : 0;
+    // Multiply volume by 5 for a much louder sound
+    const volume = this.enabled && speedKph > 1 ? (volumeMax + speedKph / 9000) * 5.0 : 0;
     this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.12);
   }
 

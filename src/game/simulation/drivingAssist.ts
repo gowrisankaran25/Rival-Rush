@@ -65,27 +65,33 @@ export function createSpeedPlan(
 
   if (!control.active) targetSpeed = 0;
   const assistMessage = describeAssist(control, curveSpeedLimit, leadDistance, leadIsIncoming);
-  const safetyBraking = targetSpeed < currentSpeed - 0.35;
+  let safetyBraking = targetSpeed < currentSpeed - 0.35;
   let acceleration: number;
 
   if (manualControl && control.active) {
     if (brakePressure > 0) {
-      // Partial pressure behaves as a speed limiter rather than eventually
-      // stopping the car. Only the full-brake gesture produces zero.
-      const brakeSpeedCap = GAME.maxSpeed * (1 - brakePressure);
-      targetSpeed = Math.min(targetSpeed, currentSpeed, brakeSpeedCap);
-    } else if (!control.accelerating) {
+      if (currentSpeed < 1.0 && !control.accelerating) {
+        // Reverse
+        targetSpeed = -GAME.maxSpeed * brakePressure * 0.4;
+        acceleration = GAME.acceleration;
+        safetyBraking = false;
+      } else {
+        const brakeSpeedCap = GAME.maxSpeed * (1 - brakePressure);
+        targetSpeed = Math.min(targetSpeed, currentSpeed, brakeSpeedCap);
+        acceleration = isEmergency(leadDistance, leadIsIncoming) ? GAME.emergencyBrake : lerp(GAME.coastDeceleration, GAME.serviceBrake, brakePressure);
+      }
+    } else if (control.accelerating) {
+      if (currentSpeed < -0.1) {
+        // Braking while in reverse
+        targetSpeed = 0;
+        acceleration = GAME.serviceBrake;
+      } else {
+        acceleration = GAME.acceleration;
+      }
+    } else {
       targetSpeed = 0;
+      acceleration = GAME.coastDeceleration;
     }
-    acceleration = safetyBraking
-      ? isEmergency(leadDistance, leadIsIncoming)
-        ? GAME.emergencyBrake
-        : GAME.serviceBrake
-      : brakePressure > 0
-        ? lerp(GAME.coastDeceleration, GAME.serviceBrake, brakePressure)
-        : control.accelerating
-          ? GAME.acceleration
-          : GAME.coastDeceleration;
   } else {
     acceleration =
       targetSpeed > currentSpeed
@@ -129,7 +135,7 @@ function describeAssist(
   }
   if (leadDistance < 32) return leadDistance < 15 ? 'EMERGENCY BRAKE' : 'TRAFFIC ASSIST';
   if (curveSpeedLimit < GAME.maxSpeed - 4) return 'CURVE ASSIST';
-  if (manualControl && brakePressure > 0) return `BRAKING ${Math.round(brakePressure * 100)}%`;
+  if (manualControl && brakePressure > 0) return currentSpeed < 1.0 && !control.accelerating ? 'REVERSING' : `BRAKING ${Math.round(brakePressure * 100)}%`;
   if (manualControl && control.accelerating) return 'ACCELERATING';
   return manualControl ? 'COASTING' : 'CRUISING';
 }

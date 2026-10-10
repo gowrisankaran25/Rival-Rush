@@ -15,6 +15,8 @@ A stylized endless-driving game controlled by a two-hand virtual steering wheel.
 - **Collectibles & Power-ups:** Collect Gold Coins for a +500 score bonus, and hit Nitro Boosts for a massive, screen-warping burst of speed.
 - **Obstacles & Collisions:** Beware of orange roadblocks and moving traffic. Collisions reduce your health and slow you down. Reaching 0% health ends the run.
 - **Vehicle Customization:** Select your driver car model and apply custom paint colors using the picker on the start screen.
+- **Dynamic Weather:** Drive through changing weather conditions, including rainstorms and snowfall, which smoothly transition as you progress.
+- **Multiple Camera Views:** Press the `C` key to cycle between 6 different camera angles, including a first-person Driver View, chase cameras, and side perspectives.
 - **Custom Engine Audio:** Each vehicle type features a unique, procedurally generated Web Audio engine profile that revs dynamically with your speed.
 
 ## Racing
@@ -61,7 +63,8 @@ On the first visit, a setup popup keeps the game locked while it downloads appro
 ![Rival Rush hand-control guide](public/images/hand-controls.svg)
 
 - **Hand mode:** hold two closed hands apart, keep them level during calibration, and rotate them like a steering wheel. Raise both thumbs for 50% braking or show both open palms for a full stop.
-- **Keyboard mode:** use `W` or up arrow to accelerate, `S` or down arrow to brake, and `A` / `D` or left / right arrows to steer. Braking stops at zero; there is no reverse gear.
+- **Keyboard mode:** use `W` or up arrow to accelerate, `S` or down arrow to brake and reverse, and `A` / `D` or left / right arrows to steer.
+- **Camera views:** press `C` to cycle between the 6 different camera views (Driver, Chase, Far Chase, Left Side, Right Side, and Face View).
 - **Pause:** use the Pause button or press `Escape`.
 - **Performance diagnostics:** press `F3` to toggle the performance HUD. Add `?perf=1` to the URL to open it automatically.
 - **Graphics:** open Graphics in the top bar to choose Auto, Low, Medium, or High quality. The selected preset is saved locally.

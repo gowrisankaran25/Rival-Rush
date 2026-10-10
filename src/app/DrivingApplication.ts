@@ -431,8 +431,15 @@ export class DrivingApplication {
   }
 
   private async toggleFullscreen(): Promise<void> {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else await this.gameShell!.requestFullscreen();
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (error) {
+      console.warn('Fullscreen request failed:', error);
+    }
   }
 
   private onFullscreenChange(): void {
@@ -455,6 +462,11 @@ export class DrivingApplication {
     if (event.code === 'F3') {
       event.preventDefault();
       this.game?.setPerformanceMonitoring(this.performanceHud.toggle());
+      return;
+    }
+    if (event.code === 'KeyC') {
+      event.preventDefault();
+      this.game?.toggleCameraAngle();
       return;
     }
     if (event.code !== 'Escape') return;

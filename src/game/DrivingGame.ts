@@ -55,9 +55,20 @@ const SNOW_TILE_METERS = GROUND_SIZE / SNOW_TEXTURE_REPEAT;
 const ROAD_UPDATE_INTERVAL = 1 / 30;
 const IDLE_RENDER_INTERVAL_MS = 200;
 
+// ── Immersive cockpit camera constants ──
+const COCKPIT_CAM_BACK = 0.2;       // How far behind player center (inside cabin)
+const COCKPIT_CAM_HEIGHT = 1.35;    // Eye height above road
+const COCKPIT_LOOK_AHEAD = 18;      // Look-at distance forward
+const COCKPIT_LOOK_HEIGHT = 0.9;    // Look-at height
+const BASE_FOV = 72;                // Wide FOV for immersion
+const NITRO_FOV = 98;               // Extreme FOV on nitro
+const MAX_SHAKE_INTENSITY = 0.06;   // Camera shake at max speed
+const MAX_ROLL_ANGLE = 0.045;       // Body roll on steering
+const SPEED_LINE_COUNT = 120;       // Number of speed-line particles
+
 export class DrivingGame {
   private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(58, 1, 0.1, 800);
+  private readonly camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 0.1, 800);
   private readonly renderer: THREE.WebGLRenderer;
   private readonly performanceMonitor = new PerformanceMonitor();
   private readonly adaptiveQuality: AdaptiveQuality;
@@ -111,6 +122,21 @@ export class DrivingGame {
   private performanceMonitoring = false;
   private graphicsQualityMode: GraphicsQualityMode = 'auto';
   private pendingRenderQuality?: RenderQualitySettings;
+
+  // ── Immersive cockpit state ──
+  private cameraRoll = 0;
+  private cameraShakeOffset = new THREE.Vector3();
+  private speedLineParticles?: THREE.LineSegments;
+  private speedLinePositions?: Float32Array;
+  private speedLineVelocities?: Float32Array;
+  private cockpitOverlay?: HTMLDivElement;
+  private currentFov = BASE_FOV;
+  private cameraMode = 0; // 0: Cockpit, 1: Hood, 2: Chase
+
+  // ── Dynamic Weather ──
+  private weatherParticles?: THREE.Points;
+  private weatherPositions?: Float32Array;
+  private weatherVelocities?: Float32Array;
 
   constructor(
     private readonly container: HTMLElement,
@@ -252,6 +278,13 @@ export class DrivingGame {
     this.player.userData.headlights = [leftHeadlight, rightHeadlight];
 
     this.scene.add(this.player);
+
+    // ── Speed-line particle system for immersive rushing feel ──
+    this.initSpeedLines();
+    this.initWeather();
+
+    // Cockpit overlay removed
+
     this.resize();
     window.addEventListener('resize', this.resize);
     this.animationFrame = requestAnimationFrame(this.animate);
@@ -264,6 +297,10 @@ export class DrivingGame {
     if (this.phase === 'crashed') this.reset();
     this.phase = 'playing';
     this.clock.getDelta();
+  }
+
+  toggleCameraAngle(): void {
+    this.cameraMode = (this.cameraMode + 1) % 6;
   }
 
   pause(): void {
@@ -369,6 +406,7 @@ export class DrivingGame {
     this.roadsideFences.dispose();
     this.textureStore.dispose();
     this.renderer.dispose();
+    this.cockpitOverlay?.remove();
   }
 
   private setupWorld(): void {
@@ -468,6 +506,23 @@ export class DrivingGame {
     while (this.traffic.length > trafficCount) {
       const removed = this.traffic.pop();
       if (removed) this.scene.remove(removed.mesh);
+    }
+    while (this.traffic.length < trafficCount) {
+      const carMesh = new THREE.Group();
+      this.scene.add(carMesh);
+      this.traffic.push({
+        mesh: carMesh,
+        speed: 0,
+        targetSpeed: 0,
+        distance: 0,
+        lane: 0,
+        laneOffset: 0,
+        direction: 1,
+        speedChangeTimer: 0,
+        counted: true,
+        horned: false,
+        isRival: false,
+      });
     }
   }
 
@@ -597,22 +652,23 @@ export class DrivingGame {
     const { targetSpeed, acceleration, safetyBraking } = speedPlan;
     this.assistMessage = speedPlan.assistMessage;
     this.vehicleAssets.setBrakeLights(this.player, safetyBraking || control.braking === true);
-    this.speed = Math.max(
-      0,
-      damp(
-        this.speed,
-        targetSpeed,
-        acceleration / Math.max(8, Math.abs(targetSpeed - this.speed)),
-        dt,
-      ),
+    this.speed = damp(
+      this.speed,
+      targetSpeed,
+      acceleration / Math.max(8, Math.abs(targetSpeed - this.speed)),
+      dt,
     );
-    if (targetSpeed === 0 && this.speed < 0.3) this.speed = 0;
+    // DEBUG REVERSE
+    if (this.speed < 0 || targetSpeed < 0 || control.braking) {
+       console.log('REVERSE DEBUG:', {speed: this.speed, targetSpeed, accel: acceleration, dt, braking: control.braking});
+    }
+    if (targetSpeed === 0 && Math.abs(this.speed) < 0.3) this.speed = 0;
 
     this.steeringVisual = damp(this.steeringVisual, control.steering, 10, dt);
     const steeringAuthority = 0.28 + 0.72 * clamp(this.speed / 18, 0, 1);
     this.vehicleHeading -= this.steeringVisual * 0.82 * steeringAuthority * dt;
     this.worldX += -Math.sin(this.vehicleHeading) * this.speed * dt;
-    this.distance += Math.max(0.12, Math.cos(this.vehicleHeading)) * this.speed * dt;
+    this.distance += Math.cos(this.vehicleHeading - roadHeading(this.distance)) * this.speed * dt;
 
     const currentRoadHeading = roadHeading(this.distance);
     const currentRoadCenter = roadCenter(this.distance);
@@ -635,9 +691,11 @@ export class DrivingGame {
       const pointsOutward =
         (this.lateral > 0 && relativeHeading < 0) || (this.lateral < 0 && relativeHeading > 0);
       if (pointsOutward) {
-        const softenedHeading = damp(relativeHeading, 0, 2.5 + edgeProximity * 5.5, dt);
-        this.vehicleHeading = currentRoadHeading + softenedHeading;
-        this.speed = Math.max(0, this.speed - (2 + edgeProximity * 5) * dt);
+        // Reduced edge friction, removed forced forward heading so you can turn around
+        this.speed -= (1 + edgeProximity * 2.5) * dt;
+        if (this.speed * Math.cos(this.vehicleHeading - currentRoadHeading) > 0) {
+           this.speed = Math.max(0, this.speed); // Slow down if driving forward into edge
+        }
       }
       this.assistMessage = 'ROAD EDGE';
       if (edgeProximity > 0.55) this.vehicleAssets.setBrakeLights(this.player, true);
@@ -777,11 +835,10 @@ export class DrivingGame {
       }
     }
 
-    if (this.nitroTimer > 0) {
-      this.camera.fov = damp(this.camera.fov, 90, 5, dt);
-    } else {
-      this.camera.fov = damp(this.camera.fov, 65, 5, dt);
-    }
+    // ── Immersive cockpit FOV ──
+    const targetFov = this.nitroTimer > 0 ? NITRO_FOV : BASE_FOV;
+    this.currentFov = damp(this.currentFov, targetFov, 5, dt);
+    this.camera.fov = this.currentFov;
     this.camera.updateProjectionMatrix();
 
     for (const mountain of this.mountains) {
@@ -860,15 +917,104 @@ export class DrivingGame {
       -this.groundSnow.position.z / SNOW_TILE_METERS,
     );
 
+    // ── Immersive cockpit camera positioning ──
     this.forward.set(-Math.sin(this.vehicleHeading), 0, -Math.cos(this.vehicleHeading));
     this.shadowCenter.copy(this.player.position).addScaledVector(this.forward, 32);
     updateSceneShadow(this.lighting, this.shadowCenter);
-    this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -8.5);
-    this.desiredCamera.y += 4.3;
-    this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-5 * dt));
-    this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, 12);
-    this.cameraTarget.y += 1;
+
+    // Apply selected camera mode
+    // Default to Driver View (Mode 0)
+    let camBack = -0.15;
+    let camHeight = 1.15;
+    let lookAhead = COCKPIT_LOOK_AHEAD;
+    let camRight = -0.35;
+    let targetRight = 0;
+    let targetHeight = COCKPIT_LOOK_HEIGHT;
+
+    // Modes:
+    // 0: Driver View (first person)
+    // 1: Chase (back view)
+    // 2: Far Chase (zoom out view)
+    // 3: Left side view
+    // 4: Right side view
+    // 5: Face View (looking at front of car)
+
+    if (this.cameraMode === 1) { // Chase
+      camBack = 6.0;
+      camHeight = 2.4;
+      camRight = 0;
+      lookAhead = 12;
+    } else if (this.cameraMode === 2) { // Far Chase
+      camBack = 12.0;
+      camHeight = 4.2;
+      camRight = 0;
+      lookAhead = 15;
+    } else if (this.cameraMode === 3) { // Left Side
+      camBack = 1.0;
+      camRight = -4.0;
+      camHeight = 1.4;
+      lookAhead = 8;
+      targetRight = 1.0;
+    } else if (this.cameraMode === 4) { // Right Side
+      camBack = 1.0;
+      camRight = 4.0;
+      camHeight = 1.4;
+      lookAhead = 8;
+      targetRight = -1.0;
+    } else if (this.cameraMode === 5) { // Face View
+      camBack = -8.0;
+      camHeight = 1.8;
+      camRight = 0;
+      lookAhead = -2.0;
+      targetHeight = 1.0;
+    }
+
+    // Hide car mesh in Driver view to prevent geometry clipping
+    const hideCar = this.cameraMode === 0;
+    this.player.children.forEach(child => {
+      if (child.type === 'Group' || child.type === 'Mesh') {
+        child.visible = !hideCar;
+      }
+    });
+
+    this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -camBack);
+    if (camRight !== 0) {
+      const rightVec = new THREE.Vector3().crossVectors(this.forward, new THREE.Vector3(0, 1, 0)).normalize();
+      this.desiredCamera.addScaledVector(rightVec, camRight);
+    }
+    this.desiredCamera.y += camHeight;
+
+    // Speed-dependent camera shake for road vibration feel
+    const speedRatio = clamp(this.speed / GAME.maxSpeed, 0, 1);
+    const shakeIntensity = speedRatio * speedRatio * MAX_SHAKE_INTENSITY;
+    const shakeTime = performance.now() * 0.013;
+    this.cameraShakeOffset.set(
+      Math.sin(shakeTime * 1.7) * shakeIntensity * 0.7,
+      Math.sin(shakeTime * 2.3 + 1.1) * shakeIntensity * 0.5,
+      Math.sin(shakeTime * 1.1 + 2.7) * shakeIntensity * 0.3,
+    );
+    this.desiredCamera.add(this.cameraShakeOffset);
+
+    this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-8 * dt));
+
+    this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, lookAhead);
+    if (targetRight !== 0) {
+      const rightVec = new THREE.Vector3().crossVectors(this.forward, new THREE.Vector3(0, 1, 0)).normalize();
+      this.cameraTarget.addScaledVector(rightVec, targetRight);
+    }
+    this.cameraTarget.y += targetHeight;
     this.camera.lookAt(this.cameraTarget);
+
+    // Body roll on turns – tilts the camera like a real car leaning
+    const targetRoll = -this.steeringVisual * MAX_ROLL_ANGLE * (0.4 + speedRatio * 0.6);
+    this.cameraRoll = damp(this.cameraRoll, targetRoll, 6, dt);
+    this.camera.rotation.z += this.cameraRoll;
+
+    // ── Update speed-line particles ──
+    this.updateSpeedLines(dt, speedRatio);
+    this.updateWeather(dt);
+
+    // Overlay update removed
   }
 
   private animate = (): void => {
@@ -936,6 +1082,248 @@ export class DrivingGame {
       shadow.mapSize.set(settings.shadowMapSize, settings.shadowMapSize);
       shadow.map?.dispose();
       shadow.map = null;
+    }
+  }
+
+  // ══════════════════════════════════════════════════
+  //   IMMERSIVE COCKPIT – Speed Lines Particle System
+  // ══════════════════════════════════════════════════
+
+  private initSpeedLines(): void {
+    const count = SPEED_LINE_COUNT;
+    const positions = new Float32Array(count * 2 * 3);
+    const velocities = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 2 * 3);
+
+    for (let i = 0; i < count; i++) {
+      this.resetSpeedLineParticle(positions, velocities, i, true);
+      // Slight warm-white tint for headlight reflection feel
+      const color = [0.95 + Math.random() * 0.05, 0.92 + Math.random() * 0.08, 0.85 + Math.random() * 0.15];
+      colors[i * 6] = color[0];     colors[i * 6 + 1] = color[1]; colors[i * 6 + 2] = color[2];
+      colors[i * 6 + 3] = color[0]; colors[i * 6 + 4] = color[1]; colors[i * 6 + 5] = color[2];
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.LineBasicMaterial({
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.speedLineParticles = new THREE.LineSegments(geometry, material);
+    this.speedLineParticles.frustumCulled = false;
+    this.scene.add(this.speedLineParticles);
+    this.speedLinePositions = positions;
+    this.speedLineVelocities = velocities;
+  }
+
+  private resetSpeedLineParticle(positions: Float32Array, velocities: Float32Array, index: number, scatter = false): void {
+    const i3 = index * 3;
+    const i6 = index * 6;
+    const spreadX = 18;
+    const spreadY = 8;
+    const forwardRange = scatter ? 60 : 30;
+    
+    const x = (Math.random() - 0.5) * spreadX;
+    const y = Math.random() * spreadY + 0.3;
+    const z = -Math.random() * forwardRange;
+    
+    positions[i6] = x;     positions[i6 + 1] = y; positions[i6 + 2] = z; // Start point
+    positions[i6 + 3] = x; positions[i6 + 4] = y; positions[i6 + 5] = z; // End point
+    
+    velocities[i3] = (Math.random() - 0.5) * 0.5;
+    velocities[i3 + 1] = (Math.random() - 0.5) * 0.2;
+    velocities[i3 + 2] = 8 + Math.random() * 20;
+  }
+
+  private updateSpeedLines(dt: number, speedRatio: number): void {
+    if (!this.speedLineParticles || !this.speedLinePositions || !this.speedLineVelocities) return;
+
+    const positions = this.speedLinePositions;
+    const velocities = this.speedLineVelocities;
+    const count = velocities.length / 3;
+    const material = this.speedLineParticles.material as THREE.LineBasicMaterial;
+
+    // Only show speed lines when moving fast enough and in hood mode
+    const lineOpacity = this.cameraMode !== 0 ? 0 : clamp((speedRatio - 0.3) / 0.4, 0, 0.65);
+    material.opacity = lineOpacity;
+
+    if (lineOpacity <= 0) return;
+
+    // Position the speed-line system around the camera
+    this.speedLineParticles.position.copy(this.camera.position);
+    this.speedLineParticles.rotation.y = this.vehicleHeading;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      const i6 = i * 6;
+      
+      const vZ = velocities[i3 + 2] * speedRatio;
+      
+      // Move end point (front of streak)
+      positions[i6 + 3] += velocities[i3] * dt;
+      positions[i6 + 4] += velocities[i3 + 1] * dt;
+      positions[i6 + 5] += vZ * dt;
+      
+      // Stretch the streak based on speed
+      positions[i6] = positions[i6 + 3];
+      positions[i6 + 1] = positions[i6 + 4];
+      positions[i6 + 2] = positions[i6 + 5] - Math.max(0.2, vZ * 0.08);
+
+      // Recycle particles that have passed the camera
+      if (positions[i6 + 5] > 15) {
+        this.resetSpeedLineParticle(positions, velocities, i);
+      }
+    }
+
+    const posAttr = this.speedLineParticles.geometry.getAttribute('position') as THREE.BufferAttribute;
+    posAttr.needsUpdate = true;
+  }
+
+  // ── Weather System ──
+  private initWeather(): void {
+    const count = 4000;
+    const positions = new Float32Array(count * 3);
+    const velocities = new Float32Array(count * 3);
+
+    for (let i = 0; i < count; i++) {
+      positions[i * 3] = (Math.random() - 0.5) * 80;
+      positions[i * 3 + 1] = Math.random() * 40;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+      velocities[i * 3] = 0;
+      velocities[i * 3 + 1] = -10 - Math.random() * 10;
+      velocities[i * 3 + 2] = 0;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 0.1,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0, // Starts clear
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.weatherParticles = new THREE.Points(geometry, material);
+    this.weatherParticles.frustumCulled = false;
+    this.scene.add(this.weatherParticles);
+    this.weatherPositions = positions;
+    this.weatherVelocities = velocities;
+  }
+
+  private updateWeather(dt: number): void {
+    if (!this.weatherParticles || !this.weatherPositions || !this.weatherVelocities) return;
+    
+    // Cycle every 5000 units of distance: Clear -> Rain -> Clear -> Snow
+    const cycle = (this.distance % 5000) / 5000;
+    let isRain = false;
+    let isSnow = false;
+    let targetOpacity = 0;
+    
+    if (cycle > 0.2 && cycle < 0.5) {
+      isRain = true;
+      targetOpacity = Math.sin(((cycle - 0.2) / 0.3) * Math.PI) * 0.6; 
+    } else if (cycle > 0.7 && cycle < 1.0) {
+      isSnow = true;
+      targetOpacity = Math.sin(((cycle - 0.7) / 0.3) * Math.PI) * 0.8;
+    }
+
+    const material = this.weatherParticles.material as THREE.PointsMaterial;
+    material.opacity = damp(material.opacity, targetOpacity, 1.0, dt);
+    
+    // Smoothly transition sky and fog color to match weather
+    const targetFogColor = new THREE.Color(isRain ? 0x5a6973 : isSnow ? 0xccddee : 0x9bb8bd);
+    (this.scene.background as THREE.Color).lerp(targetFogColor, 0.5 * dt);
+    (this.scene.fog as THREE.FogExp2).color.lerp(targetFogColor, 0.5 * dt);
+    
+    if (material.opacity < 0.01) return;
+
+    material.size = isSnow ? 0.3 : 0.08;
+    const fallSpeedBase = isRain ? 35 : 8;
+    
+    // Position the weather volume around the camera
+    this.weatherParticles.position.copy(this.camera.position);
+
+    const positions = this.weatherPositions;
+    const count = positions.length / 3;
+
+    // Convert car speed to relative world movement for particles
+    const relZ = Math.cos(this.vehicleHeading) * this.speed * dt;
+    const relX = -Math.sin(this.vehicleHeading) * this.speed * dt;
+
+    for (let i = 0; i < count; i++) {
+      const i3 = i * 3;
+      
+      positions[i3 + 1] -= (fallSpeedBase + (i % 5)) * dt;
+      
+      // Shift particles to simulate wind & relative driving speed
+      positions[i3] -= relX * 0.5;
+      positions[i3 + 2] -= relZ * 0.5;
+
+      if (positions[i3 + 1] < -10) {
+        positions[i3] = (Math.random() - 0.5) * 80;
+        positions[i3 + 1] = 40 + Math.random() * 10;
+        positions[i3 + 2] = (Math.random() - 0.5) * 80;
+      }
+    }
+
+    const posAttr = this.weatherParticles.geometry.getAttribute('position') as THREE.BufferAttribute;
+    posAttr.needsUpdate = true;
+  }
+
+  // ══════════════════════════════════════════════════
+  //   IMMERSIVE COCKPIT – Glass Windshield Overlay
+  // ══════════════════════════════════════════════════
+
+  private initCockpitOverlay(): void {
+    const overlay = document.createElement('div');
+    overlay.className = 'cockpit-glass-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML = `
+      <div class="cockpit-pillar cockpit-pillar-left"></div>
+      <div class="cockpit-pillar cockpit-pillar-right"></div>
+      <div class="cockpit-windshield-top"></div>
+      <div class="cockpit-dashboard"></div>
+      <div class="cockpit-reflection"></div>
+      <div class="cockpit-vignette"></div>
+      <div class="cockpit-speed-blur"></div>
+      <div class="cockpit-rain-dots"></div>
+    `;
+    this.container.appendChild(overlay);
+    this.cockpitOverlay = overlay;
+  }
+
+  private updateCockpitOverlay(speedRatio: number): void {
+    if (!this.cockpitOverlay) return;
+
+    // Vignette intensifies with speed
+    const vignette = this.cockpitOverlay.querySelector('.cockpit-vignette') as HTMLElement;
+    if (vignette) {
+      const vignetteOpacity = 0.25 + speedRatio * 0.45;
+      vignette.style.opacity = vignetteOpacity.toString();
+    }
+
+    // Speed blur edges intensify with speed
+    const speedBlur = this.cockpitOverlay.querySelector('.cockpit-speed-blur') as HTMLElement;
+    if (speedBlur) {
+      const blurOpacity = clamp((speedRatio - 0.4) / 0.5, 0, 0.55);
+      speedBlur.style.opacity = blurOpacity.toString();
+    }
+
+    // Reflection moves subtly with steering
+    const reflection = this.cockpitOverlay.querySelector('.cockpit-reflection') as HTMLElement;
+    if (reflection) {
+      const reflectOffset = this.steeringVisual * 12;
+      reflection.style.transform = `translateX(${reflectOffset}%) rotate(${-this.steeringVisual * 3}deg)`;
+      reflection.style.opacity = (0.06 + speedRatio * 0.04).toString();
     }
   }
 }
