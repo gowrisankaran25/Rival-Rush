@@ -11,7 +11,7 @@ A stylized endless-driving game controlled by a two-hand virtual steering wheel.
 ## Features & Mechanics
 
 - **Progression System:** Your score is driven by distance and overtakes, with your personal best saved automatically to your browser.
-- **Dynamic Lighting:** A continuous day/night cycle naturally shifts the environment. As the sun sets, your car's physical headlights activate to illuminate the road ahead.
+- **Lighting & Atmospheric Shadows:** Natural directional sunlight, soft PCF shadows, and atmospheric horizon lighting create crisp, high-visibility daytime driving.
 - **Collectibles & Power-ups:** Collect Gold Coins for a +500 score bonus, and hit Nitro Boosts for a massive, screen-warping burst of speed.
 - **Obstacles & Collisions:** Beware of orange roadblocks and moving traffic. Collisions reduce your health and slow you down. Reaching 0% health ends the run.
 - **Vehicle Customization:** Select your driver car model and apply custom paint colors using the picker on the start screen.

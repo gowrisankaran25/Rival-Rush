@@ -261,19 +261,6 @@ export class DrivingGame {
       this.sceneAssetsLoaded = true;
     });
 
-    const leftHeadlight = new THREE.SpotLight(0xffffee, 0, 300, 0.7, 0.5, 1);
-    leftHeadlight.position.set(-0.7, 0.5, -2);
-    leftHeadlight.target.position.set(-0.7, 0, -20);
-    this.player.add(leftHeadlight);
-    this.player.add(leftHeadlight.target);
-
-    const rightHeadlight = new THREE.SpotLight(0xffffee, 0, 300, 0.7, 0.5, 1);
-    rightHeadlight.position.set(0.7, 0.5, -2);
-    rightHeadlight.target.position.set(0.7, 0, -20);
-    this.player.add(rightHeadlight);
-    this.player.add(rightHeadlight.target);
-    this.player.userData.headlights = [leftHeadlight, rightHeadlight];
-
     this.scene.add(this.player);
 
     // ── Speed-line particle system for immersive rushing feel ──
@@ -877,38 +864,6 @@ export class DrivingGame {
         cloud.userData.height as number,
         -cloudDistance,
       );
-    }
-
-    // Day/Night Cycle
-    const dayCycle = (this.distance / 12000) * Math.PI;
-    const sunHeight = Math.sin(dayCycle);
-    const ambientLight = Math.max(0.3, sunHeight);
-
-    this.lighting.sun.intensity = Math.max(0, sunHeight * 3.2);
-    this.lighting.hemisphere.intensity = ambientLight * 1.55;
-
-    const bgColor = new THREE.Color().lerpColors(
-      new THREE.Color(0x071018),
-      new THREE.Color(0x9bb8bd),
-      ambientLight,
-    );
-    this.scene.background = bgColor;
-    if (this.scene.fog instanceof THREE.FogExp2) {
-      this.scene.fog.color = bgColor;
-    }
-    // Fade out sun visual
-    this.lighting.visual.children.forEach((c) => {
-      const mat = (c as THREE.Mesh).material as THREE.Material;
-      if (mat) mat.opacity = Math.max(0, sunHeight);
-    });
-
-    // Toggle headlights based on sun height
-    const targetIntensity = sunHeight < 0.2 ? 4000 : 0;
-    const headlights = this.player.userData.headlights as THREE.SpotLight[];
-    if (headlights) {
-      headlights.forEach((light) => {
-        light.intensity = damp(light.intensity, targetIntensity, 5, dt);
-      });
     }
 
     this.ground.position.set(centerX, -0.09, -this.distance - 180);
