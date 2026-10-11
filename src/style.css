@@ -178,7 +178,9 @@ button {
   );
   z-index: 3;
   opacity: 0.08;
-  transition: opacity 0.3s ease, transform 0.15s ease;
+  transition:
+    opacity 0.3s ease,
+    transform 0.15s ease;
   will-change: transform, opacity;
 }
 
@@ -202,14 +204,13 @@ button {
 .cockpit-speed-blur {
   position: absolute;
   inset: 0;
-  background:
-    radial-gradient(
-      ellipse 90% 90% at 50% 50%,
-      transparent 50%,
-      rgba(180, 200, 220, 0.04) 70%,
-      rgba(140, 170, 200, 0.12) 85%,
-      rgba(100, 140, 180, 0.22) 100%
-    );
+  background: radial-gradient(
+    ellipse 90% 90% at 50% 50%,
+    transparent 50%,
+    rgba(180, 200, 220, 0.04) 70%,
+    rgba(140, 170, 200, 0.12) 85%,
+    rgba(100, 140, 180, 0.22) 100%
+  );
   z-index: 5;
   opacity: 0;
   transition: opacity 0.35s ease;
@@ -224,18 +225,18 @@ button {
   z-index: 2;
   opacity: 0.3;
   background-image:
-    radial-gradient(circle 1px at 12% 18%, rgba(255,255,255,0.15) 0%, transparent 100%),
-    radial-gradient(circle 1px at 34% 7%, rgba(255,255,255,0.12) 0%, transparent 100%),
-    radial-gradient(circle 1px at 56% 23%, rgba(255,255,255,0.1) 0%, transparent 100%),
-    radial-gradient(circle 1px at 78% 12%, rgba(255,255,255,0.13) 0%, transparent 100%),
-    radial-gradient(circle 1px at 22% 42%, rgba(255,255,255,0.08) 0%, transparent 100%),
-    radial-gradient(circle 1px at 88% 38%, rgba(255,255,255,0.11) 0%, transparent 100%),
-    radial-gradient(circle 1px at 45% 55%, rgba(255,255,255,0.07) 0%, transparent 100%),
-    radial-gradient(circle 1px at 67% 68%, rgba(255,255,255,0.09) 0%, transparent 100%),
-    radial-gradient(circle 1.5px at 15% 75%, rgba(255,255,255,0.14) 0%, transparent 100%),
-    radial-gradient(circle 1px at 92% 62%, rgba(255,255,255,0.1) 0%, transparent 100%),
-    radial-gradient(circle 1px at 38% 85%, rgba(255,255,255,0.06) 0%, transparent 100%),
-    radial-gradient(circle 1.5px at 72% 92%, rgba(255,255,255,0.12) 0%, transparent 100%);
+    radial-gradient(circle 1px at 12% 18%, rgba(255, 255, 255, 0.15) 0%, transparent 100%),
+    radial-gradient(circle 1px at 34% 7%, rgba(255, 255, 255, 0.12) 0%, transparent 100%),
+    radial-gradient(circle 1px at 56% 23%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
+    radial-gradient(circle 1px at 78% 12%, rgba(255, 255, 255, 0.13) 0%, transparent 100%),
+    radial-gradient(circle 1px at 22% 42%, rgba(255, 255, 255, 0.08) 0%, transparent 100%),
+    radial-gradient(circle 1px at 88% 38%, rgba(255, 255, 255, 0.11) 0%, transparent 100%),
+    radial-gradient(circle 1px at 45% 55%, rgba(255, 255, 255, 0.07) 0%, transparent 100%),
+    radial-gradient(circle 1px at 67% 68%, rgba(255, 255, 255, 0.09) 0%, transparent 100%),
+    radial-gradient(circle 1.5px at 15% 75%, rgba(255, 255, 255, 0.14) 0%, transparent 100%),
+    radial-gradient(circle 1px at 92% 62%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
+    radial-gradient(circle 1px at 38% 85%, rgba(255, 255, 255, 0.06) 0%, transparent 100%),
+    radial-gradient(circle 1.5px at 72% 92%, rgba(255, 255, 255, 0.12) 0%, transparent 100%);
 }
 
 /* Windshield edge highlight — thin luminous border at the glass edge */
@@ -488,6 +489,238 @@ button {
   letter-spacing: 0.04em;
 }
 .graphics-settings-note i {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 8px var(--mint);
+}
+
+.graphics-button-label-compact,
+.sound-button-label-compact {
+  display: none;
+}
+
+.sound-settings {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  display: grid;
+  place-items: start end;
+  padding: 72px 24px 24px;
+  transition:
+    opacity 0.2s ease,
+    visibility 0.2s ease;
+}
+.sound-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(4, 7, 10, 0.46);
+  backdrop-filter: blur(3px);
+  cursor: default;
+}
+.sound-settings-card {
+  position: relative;
+  width: min(390px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-top: 2px solid var(--mint);
+  background: linear-gradient(145deg, rgba(10, 15, 20, 0.98), rgba(8, 13, 17, 0.94));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+}
+.sound-settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.sound-settings-heading small {
+  display: block;
+  color: var(--mint);
+  font:
+    500 8px 'DM Mono',
+    monospace;
+  letter-spacing: 0.14em;
+}
+.sound-settings-heading h2 {
+  margin: 3px 0 0;
+  font-size: 28px;
+  line-height: 1;
+  font-style: italic;
+  letter-spacing: -0.02em;
+}
+.sound-settings-heading button {
+  height: 29px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.62);
+  font:
+    500 8px 'DM Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.sound-settings-heading button:hover,
+.sound-settings-heading button:focus-visible {
+  border-color: var(--mint);
+  color: var(--mint);
+}
+.sound-setting-group {
+  padding: 13px 0 9px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.sound-setting-label {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 9px;
+}
+.sound-setting-label strong {
+  display: block;
+  font:
+    600 10px 'DM Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  color: #fff;
+}
+.sound-setting-label small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.44);
+  font:
+    400 8px 'DM Mono',
+    monospace;
+}
+.sound-value-badge {
+  font:
+    700 12px 'DM Mono',
+    monospace;
+  color: var(--mint);
+  text-shadow: 0 0 10px rgba(0, 255, 204, 0.4);
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+.sound-boost-badge {
+  font-size: 8px;
+  font-weight: 800;
+  color: var(--acid);
+  background: rgba(233, 255, 66, 0.15);
+  border: 1px solid var(--acid);
+  padding: 1px 4px;
+  letter-spacing: 0.1em;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.sound-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #17212b;
+  outline: none;
+  margin: 6px 0;
+  cursor: pointer;
+}
+.sound-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint);
+  cursor: pointer;
+  border: 2px solid #000;
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+}
+.sound-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  box-shadow: 0 0 14px var(--mint);
+}
+.sound-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint);
+  cursor: pointer;
+  border: 2px solid #000;
+}
+.sound-presets {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.sound-preset-btn {
+  flex: 1 1 auto;
+  min-width: 48px;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(255, 255, 255, 0.72);
+  font:
+    600 8px 'DM Mono',
+    monospace;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.sound-preset-btn:hover {
+  border-color: var(--mint);
+  color: var(--mint);
+  background: rgba(0, 255, 204, 0.08);
+}
+.sound-preset-boost {
+  border-color: rgba(233, 255, 66, 0.35);
+  color: var(--acid);
+}
+.sound-preset-boost:hover {
+  border-color: var(--acid);
+  color: var(--acid);
+  background: rgba(233, 255, 66, 0.12);
+  box-shadow: 0 0 10px rgba(233, 255, 66, 0.25);
+}
+.sound-settings-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+.sound-settings-actions .secondary-button {
+  flex: 1;
+  padding: 9px 12px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.sound-settings-actions .is-muted {
+  border-color: #ff4d4d;
+  color: #ff4d4d;
+}
+.sound-settings-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 15px -22px -22px;
+  padding: 11px 22px;
+  border-top: 1px solid var(--line);
+  color: rgba(255, 255, 255, 0.42);
+  font:
+    400 7px 'DM Mono',
+    monospace;
+  letter-spacing: 0.04em;
+}
+.sound-settings-note i {
   width: 5px;
   height: 5px;
   flex: 0 0 auto;
@@ -1499,17 +1732,21 @@ h2 {
   .icon-button {
     padding: 0 9px;
   }
-  .graphics-button-label {
+  .graphics-button-label,
+  .sound-button-label {
     display: none;
   }
-  .graphics-button-label-compact {
+  .graphics-button-label-compact,
+  .sound-button-label-compact {
     display: inline;
   }
-  .graphics-settings {
+  .graphics-settings,
+  .sound-settings {
     place-items: end stretch;
     padding: 15px;
   }
-  .graphics-settings-card {
+  .graphics-settings-card,
+  .sound-settings-card {
     width: 100%;
   }
   .modal {

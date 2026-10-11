@@ -97,6 +97,70 @@ const BASE_MODEL_SPECS: readonly CarModelSpec[] = [
     tailMaterials: ['M_Emission'],
     preserveTailColor: true,
   },
+  {
+    id: 'oldsmobile-cutlass',
+    path: 'models/oldsmobile_cutlass_supreme_sedan_71.glb',
+    rotationY: 0,
+    displayScale: 2.0,
+    paintMaterials: ['M_Paint'],
+    tailMaterials: ['M_Taillights'],
+    tailLightProfile: {
+      restColor: 0x8f1118,
+      restEmissive: 0x320003,
+      restIntensity: 0.85,
+      brakingColor: 0xff2732,
+      brakingEmissive: 0xff0712,
+      brakingIntensity: 5.2,
+    },
+  },
+  {
+    id: 'ford-gt40',
+    path: 'models/Sketchfab_2026_10_02_18_56_34.glb',
+    rotationY: Math.PI,
+    displayScale: 2.0,
+    paintMaterials: ['Car_body'],
+    tailMaterials: ['EXTERIOR_LIGHT_BRAKE'],
+    tailLightProfile: {
+      restColor: 0x8a0000,
+      restEmissive: 0x280000,
+      restIntensity: 1.0,
+      brakingColor: 0xff1522,
+      brakingEmissive: 0xff050d,
+      brakingIntensity: 6.0,
+    },
+  },
+  {
+    id: 'skyline-r34',
+    path: 'models/brians_r34_from_2_fast_2_furious.glb',
+    rotationY: Math.PI,
+    displayScale: 2.0,
+    paintMaterials: ['rNissan_SkylineGTRR34F2_1999Paint_Material1'],
+    tailMaterials: ['red_glass'],
+    tailLightProfile: {
+      restColor: 0x9e0000,
+      restEmissive: 0x300000,
+      restIntensity: 1.1,
+      brakingColor: 0xff1c28,
+      brakingEmissive: 0xff0a16,
+      brakingIntensity: 6.5,
+    },
+  },
+  {
+    id: 'ford-gt-2006',
+    path: 'models/ford_gt_2006.glb',
+    rotationY: Math.PI,
+    displayScale: 2.0,
+    paintMaterials: ['Body', 'White_Body'],
+    tailMaterials: ['Red_Light'],
+    tailLightProfile: {
+      restColor: 0x900000,
+      restEmissive: 0x2b0000,
+      restIntensity: 1.0,
+      brakingColor: 0xff1822,
+      brakingEmissive: 0xff0610,
+      brakingIntensity: 6.0,
+    },
+  },
 ];
 const AUDI_ETRON_MODEL_SPEC: CarModelSpec = {
   id: 'luxury-concept',
@@ -409,8 +473,51 @@ export class VehicleAssets {
       return this.groupWheelPartsByPosition(root, parts);
     }
 
-    if (modelId === 'ford-f150-raptor' || modelId === 'ford-everest-sport') {
+    if (
+      modelId === 'ford-f150-raptor' ||
+      modelId === 'ford-everest-sport' ||
+      modelId === 'ford-gt40'
+    ) {
       return exact(['WHEEL_RF', 'WHEEL_RR', 'WHEEL_LF', 'WHEEL_LR']);
+    }
+    if (modelId === 'oldsmobile-cutlass') {
+      return exact([
+        'wheels_M_Wheel_0_fl',
+        'wheels_M_Wheel_0_fr',
+        'wheels_M_Wheel_0_rl',
+        'wheels_M_Wheel_0_rr',
+      ]);
+    }
+    if (modelId === 'skyline-r34') {
+      const candidates = [
+        ['3DWheel_Front_L_6', '3DWheel Front L_6'],
+        ['3DWheel_Front_R_639', '3DWheel Front R_639'],
+        ['3DWheel_Rear_L_1272', '3DWheel Rear L_1272'],
+        ['3DWheel_Rear_R_1905', '3DWheel Rear R_1905'],
+      ];
+      const parts: THREE.Object3D[] = [];
+      for (const [n1, n2] of candidates) {
+        const part = root.getObjectByName(n1) ?? root.getObjectByName(n2);
+        if (part) parts.push(part);
+      }
+      return this.groupWheelPartsByPosition(root, parts);
+    }
+    if (modelId === 'ford-gt-2006') {
+      const parts: THREE.Object3D[] = [];
+      for (const name of [
+        'Object_68_left',
+        'Object_68_right',
+        'Object_69_left',
+        'Object_69_right',
+        'Object_71_left',
+        'Object_71_right',
+        'Object_72_left',
+        'Object_72_right',
+      ]) {
+        const part = root.getObjectByName(name);
+        if (part) parts.push(part);
+      }
+      return this.groupWheelPartsByPosition(root, parts);
     }
     if (modelId === 'ioniq-5') {
       return exact(['SM_Wheel_BL_0', 'SM_Wheel_BR_1', 'SM_Wheel_FL_2', 'SM_Wheel_FR_3']);
@@ -419,20 +526,288 @@ export class VehicleAssets {
   }
 
   private removeDisabledModelParts(root: THREE.Group, modelId: VehicleModelId): void {
-    if (modelId !== 'luxury-concept') return;
+    if (modelId === 'luxury-concept') {
+      const highBrakeLights: THREE.Object3D[] = [];
+      root.traverse((object) => {
+        if (
+          object instanceof THREE.Mesh &&
+          object.name.includes('LOD_A_BRAKES_mm_lights') &&
+          !object.name.includes('BRAKES_LEFT') &&
+          !object.name.includes('BRAKES_RIGHT')
+        ) {
+          highBrakeLights.push(object);
+        }
+      });
+      highBrakeLights.forEach((light) => light.removeFromParent());
+    }
 
-    const highBrakeLights: THREE.Object3D[] = [];
-    root.traverse((object) => {
-      if (
-        object instanceof THREE.Mesh &&
-        object.name.includes('LOD_A_BRAKES_mm_lights') &&
-        !object.name.includes('BRAKES_LEFT') &&
-        !object.name.includes('BRAKES_RIGHT')
-      ) {
-        highBrakeLights.push(object);
+    if (modelId === 'oldsmobile-cutlass') {
+      // Remove the decorative ground plane that ships with the Sketchfab model
+      const groundParts: THREE.Object3D[] = [];
+      root.traverse((object) => {
+        if (object.name === 'ground' || object.name === 'ground_M_Dome_0') {
+          groundParts.push(object);
+        }
+      });
+      groundParts.forEach((part) => part.removeFromParent());
+      this.splitOldsmobileWheels(root);
+      this.splitOldsmobileTaillights(root);
+    }
+
+    if (modelId === 'ford-gt40') {
+      const unwanted: THREE.Object3D[] = [];
+      root.traverse((object) => {
+        if (
+          object.name.startsWith('FLYCAM_') ||
+          object.name.startsWith('RIM_BLUR_') ||
+          (object instanceof THREE.Mesh &&
+            (Array.isArray(object.material)
+              ? object.material.some((m) => m.name === 'RIM_BLUR')
+              : object.material?.name === 'RIM_BLUR'))
+        ) {
+          unwanted.push(object);
+        }
+      });
+      unwanted.forEach((part) => part.removeFromParent());
+    }
+
+    if (modelId === 'ford-gt-2006') {
+      this.splitFordGtWheels(root);
+    }
+  }
+
+  private splitOldsmobileTaillights(root: THREE.Group): void {
+    const targetNames = ['lights_M_Lights_0', 'lights-glass_M_Lights_0', 'trim2_M_Lights_0'];
+    for (const name of targetNames) {
+      const mesh = root.getObjectByName(name);
+      if (!(mesh instanceof THREE.Mesh)) continue;
+      const parent = mesh.parent;
+      if (!parent) continue;
+
+      mesh.updateWorldMatrix(true, false);
+      const nonIndexed = mesh.geometry.toNonIndexed();
+      const pos = nonIndexed.attributes.position;
+      const mat = mesh.matrixWorld;
+      const attrNames = Object.keys(nonIndexed.attributes);
+
+      const frontAttrs: Record<string, number[]> = {};
+      const rearAttrs: Record<string, number[]> = {};
+      for (const attr of attrNames) {
+        frontAttrs[attr] = [];
+        rearAttrs[attr] = [];
       }
-    });
-    highBrakeLights.forEach((light) => light.removeFromParent());
+
+      const va = new THREE.Vector3();
+      const vb = new THREE.Vector3();
+      const vc = new THREE.Vector3();
+
+      for (let i = 0; i < pos.count; i += 3) {
+        va.fromBufferAttribute(pos, i).applyMatrix4(mat);
+        vb.fromBufferAttribute(pos, i + 1).applyMatrix4(mat);
+        vc.fromBufferAttribute(pos, i + 2).applyMatrix4(mat);
+        const triZ = (va.z + vb.z + vc.z) / 3;
+        // In raw model: triZ > 120 is rear taillights, triZ <= 120 is front headlights
+        const target = triZ > 120 ? rearAttrs : frontAttrs;
+        for (const attrName of attrNames) {
+          const attr = nonIndexed.attributes[attrName];
+          const itemSize = attr.itemSize;
+          const out = target[attrName];
+          for (let vertexIndex = i; vertexIndex < i + 3; vertexIndex++) {
+            for (let k = 0; k < itemSize; k++) {
+              out.push(attr.getComponent(vertexIndex, k));
+            }
+          }
+        }
+      }
+
+      if (frontAttrs.position.length > 0) {
+        const frontGeom = new THREE.BufferGeometry();
+        for (const [attrName, values] of Object.entries(frontAttrs)) {
+          frontGeom.setAttribute(
+            attrName,
+            new THREE.Float32BufferAttribute(values, nonIndexed.attributes[attrName].itemSize),
+          );
+        }
+        const frontMesh = new THREE.Mesh(frontGeom, mesh.material);
+        frontMesh.name = `${name}_front`;
+        frontMesh.position.copy(mesh.position);
+        frontMesh.rotation.copy(mesh.rotation);
+        frontMesh.scale.copy(mesh.scale);
+        parent.add(frontMesh);
+      }
+
+      if (rearAttrs.position.length > 0) {
+        const rearGeom = new THREE.BufferGeometry();
+        for (const [attrName, values] of Object.entries(rearAttrs)) {
+          rearGeom.setAttribute(
+            attrName,
+            new THREE.Float32BufferAttribute(values, nonIndexed.attributes[attrName].itemSize),
+          );
+        }
+        const tailMaterial = Array.isArray(mesh.material)
+          ? mesh.material[0].clone()
+          : mesh.material.clone();
+        tailMaterial.name = 'M_Taillights';
+        const rearMesh = new THREE.Mesh(rearGeom, tailMaterial);
+        rearMesh.name = `${name}_rear`;
+        rearMesh.position.copy(mesh.position);
+        rearMesh.rotation.copy(mesh.rotation);
+        rearMesh.scale.copy(mesh.scale);
+        parent.add(rearMesh);
+      }
+
+      mesh.removeFromParent();
+    }
+  }
+
+  private splitOldsmobileWheels(root: THREE.Group): void {
+    const mesh = root.getObjectByName('wheels_M_Wheel_0');
+    if (!(mesh instanceof THREE.Mesh)) return;
+    const parent = mesh.parent;
+    if (!parent) return;
+
+    mesh.updateWorldMatrix(true, false);
+    const nonIndexed = mesh.geometry.toNonIndexed();
+    const pos = nonIndexed.attributes.position;
+    const mat = mesh.matrixWorld;
+    const box = new THREE.Box3().setFromObject(mesh);
+    const center = box.getCenter(new THREE.Vector3());
+
+    const attrNames = Object.keys(nonIndexed.attributes);
+    const bucketAttrs: Record<string, Record<string, number[]>> = {
+      fl: {},
+      fr: {},
+      rl: {},
+      rr: {},
+    };
+    for (const key of ['fl', 'fr', 'rl', 'rr']) {
+      bucketAttrs[key] = {};
+      for (const name of attrNames) bucketAttrs[key][name] = [];
+    }
+
+    const va = new THREE.Vector3();
+    const vb = new THREE.Vector3();
+    const vc = new THREE.Vector3();
+
+    for (let i = 0; i < pos.count; i += 3) {
+      va.fromBufferAttribute(pos, i).applyMatrix4(mat);
+      vb.fromBufferAttribute(pos, i + 1).applyMatrix4(mat);
+      vc.fromBufferAttribute(pos, i + 2).applyMatrix4(mat);
+      const triX = (va.x + vb.x + vc.x) / 3;
+      const triZ = (va.z + vb.z + vc.z) / 3;
+      // In raw Oldsmobile model: hood/front is at Z < center.z, trunk/rear is at Z > center.z.
+      // Facing -Z (forward): left is triX < center.x (-X), right is triX > center.x (+X).
+      const left = triX < center.x;
+      const front = triZ < center.z;
+      const key = `${front ? 'f' : 'r'}${left ? 'l' : 'r'}`;
+
+      for (const name of attrNames) {
+        const attr = nonIndexed.attributes[name];
+        const itemSize = attr.itemSize;
+        const target = bucketAttrs[key][name];
+        for (let vertexIndex = i; vertexIndex < i + 3; vertexIndex++) {
+          for (let k = 0; k < itemSize; k++) {
+            target.push(attr.getComponent(vertexIndex, k));
+          }
+        }
+      }
+    }
+
+    for (const [key, attrs] of Object.entries(bucketAttrs)) {
+      if (attrs.position.length === 0) continue;
+      const geom = new THREE.BufferGeometry();
+      for (const [name, values] of Object.entries(attrs)) {
+        geom.setAttribute(
+          name,
+          new THREE.Float32BufferAttribute(values, nonIndexed.attributes[name].itemSize),
+        );
+      }
+      const subMesh = new THREE.Mesh(geom, mesh.material);
+      subMesh.name = `${mesh.name}_${key}`;
+      subMesh.position.copy(mesh.position);
+      subMesh.rotation.copy(mesh.rotation);
+      subMesh.scale.copy(mesh.scale);
+      parent.add(subMesh);
+    }
+    mesh.removeFromParent();
+  }
+
+  private splitFordGtWheels(root: THREE.Group): void {
+    root.updateMatrixWorld(true);
+    const targetNames = ['Object_68', 'Object_69', 'Object_71', 'Object_72'];
+    for (const name of targetNames) {
+      const mesh = root.getObjectByName(name);
+      if (!(mesh instanceof THREE.Mesh)) continue;
+      const parent = mesh.parent;
+      if (!parent) continue;
+
+      const nonIndexed = mesh.geometry.toNonIndexed();
+      const pos = nonIndexed.attributes.position;
+      const mat = mesh.matrixWorld;
+      const attrNames = Object.keys(nonIndexed.attributes);
+      const leftAttrs: Record<string, number[]> = {};
+      const rightAttrs: Record<string, number[]> = {};
+      for (const name of attrNames) {
+        leftAttrs[name] = [];
+        rightAttrs[name] = [];
+      }
+
+      const va = new THREE.Vector3();
+      const vb = new THREE.Vector3();
+      const vc = new THREE.Vector3();
+
+      for (let i = 0; i < pos.count; i += 3) {
+        va.fromBufferAttribute(pos, i).applyMatrix4(mat);
+        vb.fromBufferAttribute(pos, i + 1).applyMatrix4(mat);
+        vc.fromBufferAttribute(pos, i + 2).applyMatrix4(mat);
+        const centerX = (va.x + vb.x + vc.x) / 3;
+        const target = centerX > 0 ? leftAttrs : rightAttrs;
+        for (const attrName of attrNames) {
+          const attr = nonIndexed.attributes[attrName];
+          const itemSize = attr.itemSize;
+          const out = target[attrName];
+          for (let vertexIndex = i; vertexIndex < i + 3; vertexIndex++) {
+            for (let k = 0; k < itemSize; k++) {
+              out.push(attr.getComponent(vertexIndex, k));
+            }
+          }
+        }
+      }
+
+      if (leftAttrs.position.length > 0) {
+        const leftGeom = new THREE.BufferGeometry();
+        for (const [attrName, values] of Object.entries(leftAttrs)) {
+          leftGeom.setAttribute(
+            attrName,
+            new THREE.Float32BufferAttribute(values, nonIndexed.attributes[attrName].itemSize),
+          );
+        }
+        const leftMesh = new THREE.Mesh(leftGeom, mesh.material);
+        leftMesh.name = `${name}_left`;
+        leftMesh.position.copy(mesh.position);
+        leftMesh.rotation.copy(mesh.rotation);
+        leftMesh.scale.copy(mesh.scale);
+        parent.add(leftMesh);
+      }
+
+      if (rightAttrs.position.length > 0) {
+        const rightGeom = new THREE.BufferGeometry();
+        for (const [attrName, values] of Object.entries(rightAttrs)) {
+          rightGeom.setAttribute(
+            attrName,
+            new THREE.Float32BufferAttribute(values, nonIndexed.attributes[attrName].itemSize),
+          );
+        }
+        const rightMesh = new THREE.Mesh(rightGeom, mesh.material);
+        rightMesh.name = `${name}_right`;
+        rightMesh.position.copy(mesh.position);
+        rightMesh.rotation.copy(mesh.rotation);
+        rightMesh.scale.copy(mesh.scale);
+        parent.add(rightMesh);
+      }
+
+      mesh.removeFromParent();
+    }
   }
 
   private groupWheelPartsByPosition(

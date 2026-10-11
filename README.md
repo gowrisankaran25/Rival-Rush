@@ -17,11 +17,12 @@ A stylized endless-driving game controlled by a two-hand virtual steering wheel.
 - **Vehicle Customization:** Select your driver car model and apply custom paint colors using the picker on the start screen.
 - **Dynamic Weather:** Drive through changing weather conditions, including rainstorms and snowfall, which smoothly transition as you progress.
 - **Multiple Camera Views:** Press the `C` key to cycle between 6 different camera angles, including a first-person Driver View, chase cameras, and side perspectives.
-- **Custom Engine Audio:** Each vehicle type features a unique, procedurally generated Web Audio engine profile that revs dynamically with your speed.
+- **Custom Engine Audio & Volume Boost:** Each vehicle type features a unique, procedurally generated Web Audio engine profile that revs dynamically with your speed. Fine-tune audio in the Sound Settings dialog with up to 200% volume boost, independent engine/synth sliders, and quick presets.
 
 ## Racing
 
 While Rival Rush focuses on endless driving and dodging traffic, you can challenge yourself to high-speed racing by:
+
 - Overtaking cars as closely as possible to build your score combo.
 - Using Nitro Boosts to achieve maximum speed and weave through tight spaces.
 - Competing against your own personal best distance and score, which are saved locally to your browser.
@@ -37,10 +38,10 @@ Open the local URL shown by Vite in Chrome or Edge. Camera access works on `loca
 
 ## Deploy to GitHub Pages
 
-Push the project to a repository named `car_driving` using the `main` branch. In **Settings → Pages**, select **GitHub Actions** as the deployment source. The included workflow tests and deploys the game automatically to:
+Push the project to your GitHub repository (e.g. `Rival-Rush`) using the `main` branch. In **Settings → Pages**, select **GitHub Actions** as the deployment source. The included workflow tests and deploys the game automatically to:
 
 ```text
-https://<your-github-username>.github.io/car_driving/
+https://<your-github-username>.github.io/Rival-Rush/
 ```
 
 ## Available car models
@@ -53,6 +54,10 @@ Choose any of these vehicles directly on the start screen, and pick a custom pai
 | 2023 Ford Everest Sport          |    Yes     |     Yes     |
 | Hyundai Ioniq 5                  |    Yes     |     Yes     |
 | 2018 Audi e-tron GT Concept      |    Yes     |     Yes     |
+| 1971 Oldsmobile Cutlass Supreme  |    Yes     |     Yes     |
+| 1966 Ford GT40 Mk I              |    Yes     |     Yes     |
+| Nissan Skyline GT-R R34          |    Yes     |     Yes     |
+| 2006 Ford GT                     |    Yes     |     Yes     |
 
 You can select 0, 4, 8, 12, or 16 traffic cars and choose how many different models appear. Car variety defaults to 1, which reuses the selected driver model for traffic and reduces model parsing and memory use. Higher traffic counts or model variety may reduce frame rates on lower-powered devices.
 
@@ -65,6 +70,7 @@ On the first visit, a setup popup keeps the game locked while it downloads appro
 - **Hand mode:** hold two closed hands apart, keep them level during calibration, and rotate them like a steering wheel. Raise both thumbs for 50% braking or show both open palms for a full stop.
 - **Keyboard mode:** use `W` or up arrow to accelerate, `S` or down arrow to brake and reverse, and `A` / `D` or left / right arrows to steer.
 - **Camera views:** press `C` to cycle between the 6 different camera views (Driver, Chase, Far Chase, Left Side, Right Side, and Face View).
+- **Sound Settings:** click **SOUND** in the top bar to adjust Master Volume (with up to 200% volume boost), Engine roar, Synth beat, or preview with Test Sound. Audio settings are saved automatically.
 - **Pause:** use the Pause button or press `Escape`.
 - **Performance diagnostics:** press `F3` to toggle the performance HUD. Add `?perf=1` to the URL to open it automatically.
 - **Graphics:** open Graphics in the top bar to choose Auto, Low, Medium, or High quality. The selected preset is saved locally.
@@ -104,6 +110,10 @@ Original Rival Rush source code and documentation are available under the [Rival
 - [2023 Ford Everest Sport](https://sketchfab.com/3d-models/ford-everest-sport-2023-c37bec0353a94f90a3acbe09ceb3aecf) by [Asadawut.Kaewma](https://sketchfab.com/Asadawut.Kaewma), licensed under [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/).
 - [Hyundai Ioniq 5](https://sketchfab.com/3d-models/hyundai-ioniq-5-lowpoly-675e78311e8440d88714bd212cb7a8fb) by [andikapratamaw](https://sketchfab.com/andikapratamaw), licensed under [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/).
 - [2018 Audi e-tron GT Concept](https://sketchfab.com/3d-models/2018-audi-e-tron-gt-concept-e35726151c9e4a169c005d54509715fa) by [Ddiaz Design](https://sketchfab.com/ddiaz-design), licensed under [CC BY-NC-SA 4.0](http://creativecommons.org/licenses/by-nc-sa/4.0/).
+- 1971 Oldsmobile Cutlass Supreme Sedan, licensed under Creative Commons Attribution.
+- 1966 Ford GT40 Mk I, licensed under Creative Commons Attribution.
+- Nissan Skyline GT-R R34, licensed under Creative Commons Attribution.
+- 2006 Ford GT, licensed under Creative Commons Attribution.
 - [Pine Tree](https://sketchfab.com/3d-models/pine-tree-d45218a3fab349e5b1de040f29e7b6f9) by [evolveduk](https://sketchfab.com/evolveduk), licensed under [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/).
 
 Attribution and license metadata are also embedded in each GLB file.

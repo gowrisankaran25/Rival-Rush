@@ -64,7 +64,13 @@ export function createSpeedPlan(
     control.accelerating !== undefined || control.braking !== undefined || brakePressure > 0;
 
   if (!control.active) targetSpeed = 0;
-  const assistMessage = describeAssist(control, curveSpeedLimit, leadDistance, leadIsIncoming, currentSpeed);
+  const assistMessage = describeAssist(
+    control,
+    curveSpeedLimit,
+    leadDistance,
+    leadIsIncoming,
+    currentSpeed,
+  );
   let safetyBraking = targetSpeed < currentSpeed - 0.35;
   let acceleration: number;
 
@@ -78,7 +84,9 @@ export function createSpeedPlan(
       } else {
         const brakeSpeedCap = GAME.maxSpeed * (1 - brakePressure);
         targetSpeed = Math.min(targetSpeed, currentSpeed, brakeSpeedCap);
-        acceleration = isEmergency(leadDistance, leadIsIncoming) ? GAME.emergencyBrake : lerp(GAME.coastDeceleration, GAME.serviceBrake, brakePressure);
+        acceleration = isEmergency(leadDistance, leadIsIncoming)
+          ? GAME.emergencyBrake
+          : lerp(GAME.coastDeceleration, GAME.serviceBrake, brakePressure);
       }
     } else if (control.accelerating) {
       if (currentSpeed < -0.1) {
@@ -136,7 +144,10 @@ function describeAssist(
   }
   if (leadDistance < 32) return leadDistance < 15 ? 'EMERGENCY BRAKE' : 'TRAFFIC ASSIST';
   if (curveSpeedLimit < GAME.maxSpeed - 4) return 'CURVE ASSIST';
-  if (manualControl && brakePressure > 0) return currentSpeed < 1.0 && !control.accelerating ? 'REVERSING' : `BRAKING ${Math.round(brakePressure * 100)}%`;
+  if (manualControl && brakePressure > 0)
+    return currentSpeed < 1.0 && !control.accelerating
+      ? 'REVERSING'
+      : `BRAKING ${Math.round(brakePressure * 100)}%`;
   if (manualControl && control.accelerating) return 'ACCELERATING';
   return manualControl ? 'COASTING' : 'CRUISING';
 }

@@ -34,6 +34,7 @@ export function createGameTemplate(): string {
             <span class="status-dot"></span><span id="tracking-label">INPUT NOT SET</span>
           </div>
           <button id="graphics-button" class="icon-button" aria-label="Open graphics settings"><span class="graphics-button-label">GRAPHICS</span><span class="graphics-button-label-compact">GFX</span></button>
+          <button id="sound-button" class="icon-button" aria-label="Open sound settings"><span class="sound-button-label">SOUND</span><span class="sound-button-label-compact">VOL</span></button>
           <button id="fullscreen-button" class="icon-button" aria-label="Enter full screen" aria-pressed="false">FULL SCREEN</button>
           <button id="mute-button" class="icon-button" aria-label="Toggle sound">SOUND ON</button>
           <button id="main-menu-button" class="icon-button" aria-label="Return to main menu">MAIN MENU</button>
@@ -98,6 +99,54 @@ export function createGameTemplate(): string {
           </label>
           <p id="graphics-quality-description" class="graphics-quality-description"></p>
           <p class="graphics-settings-note"><i></i> Changes apply immediately and are saved for future runs.</p>
+        </div>
+      </section>
+
+      <section id="sound-settings" class="sound-settings is-hidden" role="dialog" aria-modal="true" aria-labelledby="sound-title">
+        <button id="sound-backdrop" class="sound-backdrop" type="button" aria-label="Close sound settings"></button>
+        <div class="sound-settings-card">
+          <div class="sound-settings-heading">
+            <div><small>AUDIO</small><h2 id="sound-title">SOUND SETTINGS</h2></div>
+            <button id="sound-close" type="button" aria-label="Close sound settings">CLOSE</button>
+          </div>
+
+          <div class="sound-setting-group">
+            <div class="sound-setting-label">
+              <span><strong>MASTER VOLUME</strong><small>Overall game volume (up to 200% boost)</small></span>
+              <strong id="sound-master-value" class="sound-value-badge">100%</strong>
+            </div>
+            <input id="sound-master-volume" class="sound-slider" type="range" min="0" max="200" step="1" value="100" aria-label="Master volume">
+            <div class="sound-presets">
+              <button type="button" class="sound-preset-btn" data-preset="0">MUTE</button>
+              <button type="button" class="sound-preset-btn" data-preset="50">50%</button>
+              <button type="button" class="sound-preset-btn" data-preset="100">100%</button>
+              <button type="button" class="sound-preset-btn" data-preset="150">150% BOOST</button>
+              <button type="button" class="sound-preset-btn sound-preset-boost" data-preset="200">200% MAX</button>
+            </div>
+          </div>
+
+          <div class="sound-setting-group">
+            <div class="sound-setting-label">
+              <span><strong>ENGINE SOUND</strong><small>Vehicle RPM and exhaust roar</small></span>
+              <strong id="sound-engine-value" class="sound-value-badge">100%</strong>
+            </div>
+            <input id="sound-engine-volume" class="sound-slider" type="range" min="0" max="200" step="1" value="100" aria-label="Engine volume">
+          </div>
+
+          <div class="sound-setting-group">
+            <div class="sound-setting-label">
+              <span><strong>SYNTH BEAT / MUSIC</strong><small>Rhythm, bassline and synth notes</small></span>
+              <strong id="sound-music-value" class="sound-value-badge">100%</strong>
+            </div>
+            <input id="sound-music-volume" class="sound-slider" type="range" min="0" max="200" step="1" value="100" aria-label="Music volume">
+          </div>
+
+          <div class="sound-settings-actions">
+            <button id="sound-test-button" class="secondary-button" type="button"><i>♪</i> TEST SOUND</button>
+            <button id="sound-mute-toggle" class="secondary-button" type="button">MUTE AUDIO</button>
+          </div>
+
+          <p class="sound-settings-note"><i></i> Audio settings are saved automatically. Boost up to 200% available.</p>
         </div>
       </section>
 

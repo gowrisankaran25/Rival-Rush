@@ -11,6 +11,7 @@ import { byId } from '../ui/dom';
 import { GameHud } from '../ui/GameHud';
 import { GraphicsSettings } from '../ui/GraphicsSettings';
 import { PerformanceHud } from '../ui/PerformanceHud';
+import { SoundSettings } from '../ui/SoundSettings';
 
 type TrackingState = 'ok' | 'warn' | 'off';
 
@@ -21,6 +22,12 @@ export class DrivingApplication {
   private readonly audio = new EngineSound();
   private readonly hud = new GameHud();
   private readonly graphicsSettings = new GraphicsSettings();
+  private readonly soundSettings = new SoundSettings({
+    masterVolume: this.audio.getMasterVolume(),
+    engineVolume: this.audio.getEngineVolume(),
+    musicVolume: this.audio.getMusicVolume(),
+    enabled: this.audio.getEnabled(),
+  });
   private readonly performanceHud = new PerformanceHud();
   private readonly assetGate = new AssetGate();
   private readonly viewport = byId<HTMLDivElement>('viewport');
@@ -40,7 +47,7 @@ export class DrivingApplication {
   private handController: HandController | null = null;
   private mode: ControlMode = 'hands';
   private lastSnapshot: GameSnapshot | null = null;
-  private soundEnabled = true;
+  private soundEnabled = this.audio.getEnabled();
   private driverCar: CarModelId = DEFAULT_CAR_MODEL_ID;
   private driverColor = 0xf5f7f4;
   private trafficCount = 4;
@@ -48,6 +55,7 @@ export class DrivingApplication {
   private assetsReady: Promise<boolean> = Promise.resolve(false);
   private sceneReady: Promise<boolean> = Promise.resolve(false);
   private resumeAfterGraphics = false;
+  private resumeAfterSound = false;
 
   constructor() {
     if (!this.gameShell || !this.cameraShell) throw new Error('The game shell is incomplete.');
@@ -74,6 +82,23 @@ export class DrivingApplication {
         onOpen: () => this.openGraphicsSettings(),
         onClose: () => this.closeGraphicsSettings(),
         onChange: (mode) => this.game?.setGraphicsQuality(mode),
+      },
+      this.events.signal,
+    );
+    this.soundSettings.bind(
+      {
+        onOpen: () => this.openSoundSettings(),
+        onClose: () => this.closeSoundSettings(),
+        onMasterVolumeChange: (vol) => this.audio.setMasterVolume(vol),
+        onEngineVolumeChange: (vol) => this.audio.setEngineVolume(vol),
+        onMusicVolumeChange: (vol) => this.audio.setMusicVolume(vol),
+        onMuteToggle: (enabled) => {
+          this.soundEnabled = enabled;
+          this.audio.setEnabled(enabled);
+          const muteBtn = byId<HTMLButtonElement>('mute-button');
+          if (muteBtn) muteBtn.textContent = enabled ? 'SOUND ON' : 'SOUND OFF';
+        },
+        onTestSound: () => this.audio.testSound(),
       },
       this.events.signal,
     );
@@ -130,6 +155,7 @@ export class DrivingApplication {
       (event) => {
         this.soundEnabled = !this.soundEnabled;
         this.audio.setEnabled(this.soundEnabled);
+        this.soundSettings.setValues({ enabled: this.soundEnabled });
         (event.currentTarget as HTMLButtonElement).textContent = this.soundEnabled
           ? 'SOUND ON'
           : 'SOUND OFF';
@@ -353,7 +379,7 @@ export class DrivingApplication {
     this.audio.setPlaying(false);
     const snapshot = this.lastSnapshot;
     const score = snapshot?.score ?? 0;
-    
+
     const currentHighScore = parseInt(localStorage.getItem('driftline-highscore') || '0', 10);
     const highScore = Math.max(score, currentHighScore);
     if (score > currentHighScore) {
@@ -454,6 +480,11 @@ export class DrivingApplication {
   }
 
   private onGlobalKeyDown(event: KeyboardEvent): void {
+    if (event.code === 'Escape' && this.soundSettings.isOpen()) {
+      event.preventDefault();
+      this.closeSoundSettings();
+      return;
+    }
     if (event.code === 'Escape' && this.graphicsSettings.isOpen()) {
       event.preventDefault();
       this.closeGraphicsSettings();
@@ -494,5 +525,27 @@ export class DrivingApplication {
       this.pauseButton.textContent = 'PAUSE';
     }
     this.resumeAfterGraphics = false;
+  }
+
+  private openSoundSettings(): void {
+    if (this.soundSettings.isOpen()) return;
+    this.resumeAfterSound = this.game?.getPhase() === 'playing';
+    if (this.resumeAfterSound) {
+      this.game?.pause();
+      this.audio.setPlaying(false);
+      this.pauseButton.textContent = 'RESUME';
+    }
+    this.soundSettings.open();
+  }
+
+  private closeSoundSettings(): void {
+    if (!this.soundSettings.isOpen()) return;
+    this.soundSettings.close();
+    if (this.resumeAfterSound) {
+      this.game?.resume();
+      this.audio.setPlaying(true);
+      this.pauseButton.textContent = 'PAUSE';
+    }
+    this.resumeAfterSound = false;
   }
 }

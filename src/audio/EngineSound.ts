@@ -1,9 +1,19 @@
+export interface AudioSettingsState {
+  masterVolume: number;
+  engineVolume: number;
+  musicVolume: number;
+  enabled: boolean;
+}
+
+const AUDIO_STORAGE_KEY = 'rival-rush-sound-settings';
+
 /**
  * Owns all procedural game audio. Keeping Web Audio nodes behind this class
  * prevents UI and game-state code from depending on the audio graph.
  */
 export class EngineSound {
   private context: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
   private oscillator: OscillatorNode | null = null;
   private gain: GainNode | null = null;
   private musicGain: GainNode | null = null;
@@ -11,28 +21,80 @@ export class EngineSound {
   private beat = 0;
   private playing = false;
   private enabled = true;
+  private masterVolume = 1.0;
+  private engineVolume = 1.0;
+  private musicVolume = 1.0;
   private carModelId: string = 'ford-f150-raptor';
+
+  constructor() {
+    this.loadSettings();
+  }
 
   setCarModel(modelId: string): void {
     this.carModelId = modelId;
   }
 
+  getMasterVolume(): number {
+    return this.masterVolume;
+  }
+
+  setMasterVolume(volume: number): void {
+    this.masterVolume = Math.max(0, Math.min(2.0, volume));
+    this.saveSettings();
+    if (this.masterGain && this.context) {
+      this.masterGain.gain.setTargetAtTime(
+        this.enabled ? this.masterVolume : 0,
+        this.context.currentTime,
+        0.05,
+      );
+    }
+  }
+
+  getEngineVolume(): number {
+    return this.engineVolume;
+  }
+
+  setEngineVolume(volume: number): void {
+    this.engineVolume = Math.max(0, Math.min(2.0, volume));
+    this.saveSettings();
+  }
+
+  getMusicVolume(): number {
+    return this.musicVolume;
+  }
+
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.max(0, Math.min(2.0, volume));
+    this.saveSettings();
+    if (this.musicGain && this.context) {
+      this.musicGain.gain.setTargetAtTime(0.13 * this.musicVolume, this.context.currentTime, 0.05);
+    }
+  }
+
+  getEnabled(): boolean {
+    return this.enabled;
+  }
+
   start(): void {
     if (this.context) return;
     this.context = new AudioContext();
+    this.masterGain = this.context.createGain();
+    this.masterGain.gain.value = this.enabled ? this.masterVolume : 0;
+    this.masterGain.connect(this.context.destination);
+
     this.oscillator = this.context.createOscillator();
     this.gain = this.context.createGain();
     this.musicGain = this.context.createGain();
     this.oscillator.type = 'sawtooth';
     this.oscillator.frequency.value = 54;
     this.gain.gain.value = 0.025;
-    this.musicGain.gain.value = 0.13;
+    this.musicGain.gain.value = 0.13 * this.musicVolume;
 
     const filter = this.context.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = 240;
-    this.oscillator.connect(filter).connect(this.gain).connect(this.context.destination);
-    this.musicGain.connect(this.context.destination);
+    this.oscillator.connect(filter).connect(this.gain).connect(this.masterGain);
+    this.musicGain.connect(this.masterGain);
     this.oscillator.start();
     this.musicTimer = window.setInterval(() => this.scheduleMusicBeat(), 250);
   }
@@ -61,9 +123,14 @@ export class EngineSound {
       this.oscillator.type = type;
     }
 
-    this.oscillator.frequency.setTargetAtTime(baseFreq + speedKph * freqMultiplier, this.context.currentTime, 0.08);
-    // Multiply volume by 5 for a much louder sound
-    const volume = this.enabled && speedKph > 1 ? (volumeMax + speedKph / 9000) * 5.0 : 0;
+    this.oscillator.frequency.setTargetAtTime(
+      baseFreq + speedKph * freqMultiplier,
+      this.context.currentTime,
+      0.08,
+    );
+    // Multiply volume by 5 for a much louder sound, multiplied by user engine volume setting
+    const volume =
+      this.enabled && speedKph > 1 ? (volumeMax + speedKph / 9000) * 5.0 * this.engineVolume : 0;
     this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.12);
   }
 
@@ -74,8 +141,13 @@ export class EngineSound {
 
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (!enabled && this.context && this.gain) {
-      this.gain.gain.setTargetAtTime(0, this.context.currentTime, 0.04);
+    this.saveSettings();
+    if (this.context && this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(
+        enabled ? this.masterVolume : 0,
+        this.context.currentTime,
+        0.04,
+      );
     }
   }
 
@@ -87,11 +159,78 @@ export class EngineSound {
     }
   }
 
+  testSound(): void {
+    if (!this.context) this.start();
+    if (!this.context) return;
+    void this.context.resume();
+    const now = this.context.currentTime;
+    if (this.masterGain) {
+      this.masterGain.gain.setValueAtTime(this.masterVolume, now);
+    }
+    // Quick engine rev sweep
+    if (this.oscillator && this.gain) {
+      this.oscillator.frequency.setValueAtTime(50, now);
+      this.oscillator.frequency.exponentialRampToValueAtTime(140, now + 0.18);
+      this.oscillator.frequency.exponentialRampToValueAtTime(60, now + 0.38);
+      this.gain.gain.setValueAtTime(0.001, now);
+      this.gain.gain.linearRampToValueAtTime(0.12 * this.engineVolume, now + 0.12);
+      this.gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
+    }
+    this.playHornPulse(now + 0.22);
+  }
+
   stop(): void {
     if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
     this.musicTimer = null;
     void this.context?.close();
     this.context = null;
+    this.masterGain = null;
+  }
+
+  private saveSettings(): void {
+    try {
+      const storage =
+        typeof window !== 'undefined'
+          ? window.localStorage
+          : (globalThis as unknown as { localStorage?: Storage }).localStorage;
+      if (!storage) return;
+      const data: AudioSettingsState = {
+        masterVolume: this.masterVolume,
+        engineVolume: this.engineVolume,
+        musicVolume: this.musicVolume,
+        enabled: this.enabled,
+      };
+      storage.setItem(AUDIO_STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // Storage unavailable in private browsing
+    }
+  }
+
+  private loadSettings(): void {
+    try {
+      const storage =
+        typeof window !== 'undefined'
+          ? window.localStorage
+          : (globalThis as unknown as { localStorage?: Storage }).localStorage;
+      if (!storage) return;
+      const saved = storage.getItem(AUDIO_STORAGE_KEY);
+      if (!saved) return;
+      const data = JSON.parse(saved) as Partial<AudioSettingsState>;
+      if (typeof data.masterVolume === 'number' && Number.isFinite(data.masterVolume)) {
+        this.masterVolume = Math.max(0, Math.min(2.0, data.masterVolume));
+      }
+      if (typeof data.engineVolume === 'number' && Number.isFinite(data.engineVolume)) {
+        this.engineVolume = Math.max(0, Math.min(2.0, data.engineVolume));
+      }
+      if (typeof data.musicVolume === 'number' && Number.isFinite(data.musicVolume)) {
+        this.musicVolume = Math.max(0, Math.min(2.0, data.musicVolume));
+      }
+      if (typeof data.enabled === 'boolean') {
+        this.enabled = data.enabled;
+      }
+    } catch {
+      // Storage unavailable or corrupt
+    }
   }
 
   private scheduleMusicBeat(): void {
@@ -117,6 +256,7 @@ export class EngineSound {
 
   private playHornPulse(start: number): void {
     if (!this.context) return;
+    const dest = this.masterGain ?? this.context.destination;
     const envelope = this.context.createGain();
     const filter = this.context.createBiquadFilter();
     const lowTone = this.context.createOscillator();
@@ -133,7 +273,7 @@ export class EngineSound {
     envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.21);
     lowTone.connect(filter);
     highTone.connect(filter);
-    filter.connect(envelope).connect(this.context.destination);
+    filter.connect(envelope).connect(dest);
     lowTone.start(start);
     highTone.start(start);
     lowTone.stop(start + 0.23);
