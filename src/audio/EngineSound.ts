@@ -3,13 +3,15 @@ export interface AudioSettingsState {
   engineVolume: number;
   musicVolume: number;
   enabled: boolean;
+  menuMusicEnabled?: boolean;
 }
+
+export type AudioMode = 'menu' | 'racing';
 
 const AUDIO_STORAGE_KEY = 'rival-rush-sound-settings';
 
 /**
- * Owns all procedural game audio. Keeping Web Audio nodes behind this class
- * prevents UI and game-state code from depending on the audio graph.
+ * Owns all procedural game audio, realistic menu soundtrack, engine synthesis, and sound effects.
  */
 export class EngineSound {
   private context: AudioContext | null = null;
@@ -19,6 +21,9 @@ export class EngineSound {
   private musicGain: GainNode | null = null;
   private musicTimer: number | null = null;
   private beat = 0;
+  private menuStep = 0;
+  private mode: AudioMode = 'menu';
+  private menuMusicActive = true;
   private playing = false;
   private enabled = true;
   private masterVolume = 1.0;
@@ -67,7 +72,7 @@ export class EngineSound {
     this.musicVolume = Math.max(0, Math.min(2.0, volume));
     this.saveSettings();
     if (this.musicGain && this.context) {
-      this.musicGain.gain.setTargetAtTime(0.13 * this.musicVolume, this.context.currentTime, 0.05);
+      this.musicGain.gain.setTargetAtTime(0.14 * this.musicVolume, this.context.currentTime, 0.05);
     }
   }
 
@@ -75,8 +80,39 @@ export class EngineSound {
     return this.enabled;
   }
 
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled;
+    this.saveSettings();
+    if (this.context && this.masterGain) {
+      this.masterGain.gain.setTargetAtTime(
+        enabled ? this.masterVolume : 0,
+        this.context.currentTime,
+        0.04,
+      );
+    }
+  }
+
+  isContextRunning(): boolean {
+    return this.context !== null && this.context.state === 'running';
+  }
+
+  isMenuMusicActive(): boolean {
+    return this.menuMusicActive && this.enabled;
+  }
+
+  getMode(): AudioMode {
+    return this.mode;
+  }
+
   start(): void {
-    if (this.context) return;
+    if (this.context) {
+      if (this.context.state === 'suspended') {
+        void this.context.resume();
+      }
+      return;
+    }
+    if (typeof AudioContext === 'undefined') return;
+
     this.context = new AudioContext();
     this.masterGain = this.context.createGain();
     this.masterGain.gain.value = this.enabled ? this.masterVolume : 0;
@@ -87,8 +123,8 @@ export class EngineSound {
     this.musicGain = this.context.createGain();
     this.oscillator.type = 'sawtooth';
     this.oscillator.frequency.value = 54;
-    this.gain.gain.value = 0.025;
-    this.musicGain.gain.value = 0.13 * this.musicVolume;
+    this.gain.gain.value = 0.001;
+    this.musicGain.gain.value = 0.14 * this.musicVolume;
 
     const filter = this.context.createBiquadFilter();
     filter.type = 'lowpass';
@@ -96,11 +132,44 @@ export class EngineSound {
     this.oscillator.connect(filter).connect(this.gain).connect(this.masterGain);
     this.musicGain.connect(this.masterGain);
     this.oscillator.start();
-    this.musicTimer = window.setInterval(() => this.scheduleMusicBeat(), 250);
+
+    if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
+    this.musicTimer = window.setInterval(() => this.scheduleBeat(), 240);
+  }
+
+  startMenuMusic(): void {
+    this.mode = 'menu';
+    this.menuMusicActive = true;
+    this.start();
+    if (this.context && this.context.state === 'suspended') {
+      void this.context.resume();
+    }
+    if (this.gain && this.context) {
+      this.gain.gain.setTargetAtTime(0.001, this.context.currentTime, 0.05);
+    }
+  }
+
+  startRacingMusic(): void {
+    this.mode = 'racing';
+    this.playing = true;
+    this.start();
+    if (this.context && this.context.state === 'suspended') {
+      void this.context.resume();
+    }
+  }
+
+  toggleMenuMusic(): boolean {
+    this.menuMusicActive = !this.menuMusicActive;
+    this.saveSettings();
+    if (this.menuMusicActive) {
+      this.startMenuMusic();
+    }
+    return this.menuMusicActive;
   }
 
   update(speedKph: number): void {
     if (!this.context || !this.oscillator || !this.gain) return;
+    if (this.mode !== 'racing' || !this.playing) return;
 
     let baseFreq = 48;
     let freqMultiplier = 1.1;
@@ -117,6 +186,26 @@ export class EngineSound {
       freqMultiplier = 2.5;
       volumeMax = 0.012;
       type = 'sine';
+    } else if (this.carModelId === 'oldsmobile-cutlass') {
+      baseFreq = 38;
+      freqMultiplier = 1.35;
+      volumeMax = 0.028;
+      type = 'sawtooth';
+    } else if (this.carModelId === 'ford-gt40') {
+      baseFreq = 65;
+      freqMultiplier = 1.6;
+      volumeMax = 0.027;
+      type = 'sawtooth';
+    } else if (this.carModelId === 'skyline-r34') {
+      baseFreq = 70;
+      freqMultiplier = 1.7;
+      volumeMax = 0.024;
+      type = 'sawtooth';
+    } else if (this.carModelId === 'ford-gt-2006') {
+      baseFreq = 52;
+      freqMultiplier = 1.5;
+      volumeMax = 0.026;
+      type = 'sawtooth';
     }
 
     if (this.oscillator.type !== type) {
@@ -128,7 +217,6 @@ export class EngineSound {
       this.context.currentTime,
       0.08,
     );
-    // Multiply volume by 5 for a much louder sound, multiplied by user engine volume setting
     const volume =
       this.enabled && speedKph > 1 ? (volumeMax + speedKph / 9000) * 5.0 * this.engineVolume : 0;
     this.gain.gain.setTargetAtTime(volume, this.context.currentTime, 0.12);
@@ -136,18 +224,76 @@ export class EngineSound {
 
   setPlaying(playing: boolean): void {
     this.playing = playing;
-    if (playing) void this.context?.resume();
+    if (playing) {
+      this.mode = 'racing';
+      void this.context?.resume();
+    } else {
+      if (this.gain && this.context) {
+        this.gain.gain.setTargetAtTime(0.001, this.context.currentTime, 0.08);
+      }
+    }
   }
 
-  setEnabled(enabled: boolean): void {
-    this.enabled = enabled;
-    this.saveSettings();
-    if (this.context && this.masterGain) {
-      this.masterGain.gain.setTargetAtTime(
-        enabled ? this.masterVolume : 0,
-        this.context.currentTime,
-        0.04,
-      );
+  /**
+   * Plays a signature engine rev burst and exhaust notes tailored to each car model.
+   * Gives an authentic supercar showroom experience directly on the main page.
+   */
+  previewCarEngine(modelId: string): void {
+    if (!this.context) this.start();
+    if (!this.context) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+    const engVol = this.enabled ? this.engineVolume * 0.22 : 0;
+    if (engVol <= 0.001) return;
+
+    switch (modelId) {
+      case 'oldsmobile-cutlass': {
+        // Deep throaty American V8 muscle car throttle blip & exhaust burble
+        this.synthEngineRev(now, 40, 135, 52, 0.95, 'sawtooth', 440, engVol * 1.3);
+        this.synthExhaustPop(now + 0.42, engVol * 0.45);
+        this.synthExhaustPop(now + 0.58, engVol * 0.35);
+        break;
+      }
+      case 'ford-gt40': {
+        // Raw, raspy 1966 endurance racing V8 roar
+        this.synthEngineRev(now, 72, 260, 95, 0.88, 'sawtooth', 880, engVol * 1.35);
+        this.synthExhaustPop(now + 0.45, engVol * 0.6);
+        this.synthExhaustPop(now + 0.55, engVol * 0.5);
+        break;
+      }
+      case 'skyline-r34': {
+        // RB26DETT twin-turbo inline-6 scream & iconic turbo blow-off whoosh
+        this.synthEngineRev(now, 85, 310, 110, 0.9, 'sawtooth', 980, engVol * 1.2);
+        this.synthTurboWhoosh(now + 0.38, engVol * 0.55);
+        break;
+      }
+      case 'ford-gt-2006': {
+        // Supercharged 5.4L V8 roar with high-pitch supercharger whine
+        this.synthEngineRev(now, 58, 220, 78, 0.92, 'sawtooth', 760, engVol * 1.25);
+        this.synthSuperchargerWhine(now, 780, 1600, 0.8, engVol * 0.45);
+        break;
+      }
+      case 'ford-f150-raptor': {
+        // Heavy twin-turbo 3.5L V6 EcoBoost truck growl
+        this.synthEngineRev(now, 44, 145, 55, 0.92, 'square', 460, engVol * 1.2);
+        this.synthTurboWhoosh(now + 0.42, engVol * 0.35);
+        break;
+      }
+      case 'ford-everest-sport': {
+        // Guttural turbodiesel SUV power surge
+        this.synthEngineRev(now, 48, 140, 58, 0.88, 'sawtooth', 400, engVol * 1.1);
+        break;
+      }
+      case 'ioniq-5':
+      case 'luxury-concept': {
+        // Futuristic dual-motor EV frequency glide
+        this.synthElectricGlide(now, 160, 620, 0.85, engVol * 0.95);
+        break;
+      }
+      default: {
+        this.synthEngineRev(now, 50, 165, 65, 0.85, 'sawtooth', 520, engVol);
+        break;
+      }
     }
   }
 
@@ -167,16 +313,10 @@ export class EngineSound {
     if (this.masterGain) {
       this.masterGain.gain.setValueAtTime(this.masterVolume, now);
     }
-    // Quick engine rev sweep
-    if (this.oscillator && this.gain) {
-      this.oscillator.frequency.setValueAtTime(50, now);
-      this.oscillator.frequency.exponentialRampToValueAtTime(140, now + 0.18);
-      this.oscillator.frequency.exponentialRampToValueAtTime(60, now + 0.38);
-      this.gain.gain.setValueAtTime(0.001, now);
-      this.gain.gain.linearRampToValueAtTime(0.12 * this.engineVolume, now + 0.12);
-      this.gain.gain.linearRampToValueAtTime(0.001, now + 0.4);
-    }
-    this.playHornPulse(now + 0.22);
+    // Realistic preview: engine rev + chord
+    this.synthEngineRev(now, 50, 180, 70, 0.5, 'sawtooth', 600, 0.12 * this.engineVolume);
+    this.playNote(440, now + 0.1, 0.3, 'triangle', 0.14 * this.musicVolume, 1200);
+    this.playHornPulse(now + 0.28);
   }
 
   stop(): void {
@@ -199,6 +339,7 @@ export class EngineSound {
         engineVolume: this.engineVolume,
         musicVolume: this.musicVolume,
         enabled: this.enabled,
+        menuMusicEnabled: this.menuMusicActive,
       };
       storage.setItem(AUDIO_STORAGE_KEY, JSON.stringify(data));
     } catch {
@@ -228,13 +369,98 @@ export class EngineSound {
       if (typeof data.enabled === 'boolean') {
         this.enabled = data.enabled;
       }
+      if (typeof data.menuMusicEnabled === 'boolean') {
+        this.menuMusicActive = data.menuMusicEnabled;
+      }
     } catch {
       // Storage unavailable or corrupt
     }
   }
 
-  private scheduleMusicBeat(): void {
-    if (!this.context || !this.musicGain || !this.playing || !this.enabled) return;
+  private scheduleBeat(): void {
+    if (!this.context || !this.musicGain || !this.enabled) return;
+
+    if (this.mode === 'menu') {
+      if (!this.menuMusicActive) return;
+      this.scheduleMenuBeat();
+    } else if (this.mode === 'racing') {
+      if (!this.playing) return;
+      this.scheduleRacingBeat();
+    }
+  }
+
+  /**
+   * Realistic cinematic electronic racing menu theme.
+   * 32-step loop with lush analog synth chords, driving sub-bass, crystal arpeggio, and punchy drums.
+   */
+  private scheduleMenuBeat(): void {
+    if (!this.context || !this.musicGain) return;
+    const now = this.context.currentTime;
+    const step = this.menuStep;
+
+    // 8-bar chord progression at 125 BPM (4 steps per bar):
+    // Bars 0-1 (steps 0-7): Am
+    // Bars 2-3 (steps 8-15): F
+    // Bars 4-5 (steps 16-23): C
+    // Bars 6-7 (steps 24-31): G / Em
+    let chordFreqs = [110, 130.81, 164.81]; // Am (A2, C3, E3)
+    let bassNote = 55; // A1
+    let arpScale = [220, 261.63, 329.63, 440, 329.63, 261.63, 293.66, 246.94];
+
+    if (step >= 8 && step < 16) {
+      chordFreqs = [87.31, 110, 130.81]; // F (F2, A2, C3)
+      bassNote = 43.65; // F1
+      arpScale = [174.61, 220, 261.63, 349.23, 261.63, 220, 261.63, 174.61];
+    } else if (step >= 16 && step < 24) {
+      chordFreqs = [130.81, 164.81, 196]; // C (C3, E3, G3)
+      bassNote = 65.41; // C2
+      arpScale = [261.63, 329.63, 392, 523.25, 392, 329.63, 392, 261.63];
+    } else if (step >= 24) {
+      chordFreqs = [98, 123.47, 146.83]; // G (G2, B2, D3)
+      bassNote = 49; // G1
+      arpScale = [196, 246.94, 293.66, 392, 293.66, 246.94, 220, 196];
+    }
+
+    // 1. Atmospheric Ambient Synth Pad (plays at start of each 8-step chord section)
+    if (step % 8 === 0) {
+      this.playChord(chordFreqs, now, 1.85, 0.048, 720);
+    }
+
+    // 2. Sub-Bassline (syncopated groove)
+    const isBassStep = [0, 2, 3, 6, 8, 10, 11, 14, 16, 18, 19, 22, 24, 26, 27, 30].includes(step);
+    if (isBassStep) {
+      const pitchMultiplier = step % 4 === 3 ? 1.5 : 1.0;
+      this.playNote(bassNote * pitchMultiplier, now, 0.22, 'sawtooth', 0.16, 320);
+    }
+
+    // 3. Melodic Arpeggiator (plucked crystal notes on even steps)
+    if (step % 2 === 0) {
+      const note = arpScale[(step / 2) % arpScale.length];
+      this.playNote(note, now + 0.015, 0.16, 'triangle', 0.08, 1250);
+    }
+
+    // 4. Subtle Drum Section
+    // Four-on-the-floor sub-kick
+    if (step % 4 === 0) {
+      this.playKick(now);
+    }
+    // Snare / clap on beats 2 and 4
+    if (step % 4 === 2) {
+      this.playNoise(now, 0.038);
+    }
+    // Hi-hat on offbeats
+    if (step % 2 === 1) {
+      this.playHiHat(now, 0.022);
+    }
+
+    this.menuStep = (this.menuStep + 1) % 32;
+  }
+
+  /**
+   * High-octane in-game racing track beat.
+   */
+  private scheduleRacingBeat(): void {
+    if (!this.context || !this.musicGain) return;
     const now = this.context.currentTime;
     const bassNotes = [55, 55, 65.41, 55, 73.42, 65.41, 49, 49];
     const leadNotes = [220, 246.94, 293.66, 329.63, 293.66, 246.94, 196, 220];
@@ -252,6 +478,51 @@ export class EngineSound {
     if (this.beat % 4 === 0) this.playKick(now);
     if (this.beat % 4 === 2) this.playNoise(now, 0.045);
     this.beat += 1;
+  }
+
+  private playChord(
+    frequencies: number[],
+    start: number,
+    duration: number,
+    volume: number,
+    cutoff: number,
+  ): void {
+    if (!this.context || !this.musicGain) return;
+    frequencies.forEach((freq, idx) => {
+      const osc = this.context!.createOscillator();
+      const env = this.context!.createGain();
+      const filter = this.context!.createBiquadFilter();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq + (idx === 1 ? 0.8 : -0.8), start); // Subtle stereo-like detune
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(cutoff, start);
+      filter.frequency.linearRampToValueAtTime(cutoff + 180, start + duration * 0.4);
+      filter.frequency.linearRampToValueAtTime(cutoff - 60, start + duration);
+      env.gain.setValueAtTime(0.0001, start);
+      env.gain.exponentialRampToValueAtTime(volume, start + 0.12);
+      env.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+      osc.connect(filter).connect(env).connect(this.musicGain!);
+      osc.start(start);
+      osc.stop(start + duration + 0.05);
+    });
+  }
+
+  private playHiHat(start: number, volume: number): void {
+    if (!this.context || !this.musicGain) return;
+    const frameCount = Math.floor(this.context.sampleRate * 0.035);
+    const buffer = this.context.createBuffer(1, frameCount, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i += 1) data[i] = Math.random() * 2 - 1;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const envelope = this.context.createGain();
+    source.buffer = buffer;
+    filter.type = 'highpass';
+    filter.frequency.value = 6500;
+    envelope.gain.setValueAtTime(volume, start);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.03);
+    source.connect(filter).connect(envelope).connect(this.musicGain);
+    source.start(start);
   }
 
   private playHornPulse(start: number): void {
@@ -309,9 +580,9 @@ export class EngineSound {
     const oscillator = this.context.createOscillator();
     const envelope = this.context.createGain();
     oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(120, start);
-    oscillator.frequency.exponentialRampToValueAtTime(42, start + 0.12);
-    envelope.gain.setValueAtTime(0.25, start);
+    oscillator.frequency.setValueAtTime(130, start);
+    oscillator.frequency.exponentialRampToValueAtTime(38, start + 0.14);
+    envelope.gain.setValueAtTime(0.24, start);
     envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
     oscillator.connect(envelope).connect(this.musicGain);
     oscillator.start(start);
@@ -329,10 +600,136 @@ export class EngineSound {
     const envelope = this.context.createGain();
     source.buffer = buffer;
     filter.type = 'highpass';
-    filter.frequency.value = 3200;
+    filter.frequency.value = 2600;
     envelope.gain.setValueAtTime(volume, start);
     envelope.gain.exponentialRampToValueAtTime(0.0001, start + 0.05);
     source.connect(filter).connect(envelope).connect(this.musicGain);
     source.start(start);
+  }
+
+  private synthEngineRev(
+    start: number,
+    startFreq: number,
+    peakFreq: number,
+    endFreq: number,
+    duration: number,
+    type: OscillatorType,
+    cutoff: number,
+    volume: number,
+  ): void {
+    if (!this.context || !this.masterGain) return;
+    const osc = this.context.createOscillator();
+    const env = this.context.createGain();
+    const filter = this.context.createBiquadFilter();
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(startFreq, start);
+    osc.frequency.exponentialRampToValueAtTime(peakFreq, start + duration * 0.35);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, start + duration);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(cutoff, start);
+    filter.frequency.linearRampToValueAtTime(cutoff * 1.5, start + duration * 0.35);
+    filter.frequency.linearRampToValueAtTime(cutoff, start + duration);
+
+    env.gain.setValueAtTime(0.001, start);
+    env.gain.linearRampToValueAtTime(volume, start + duration * 0.3);
+    env.gain.linearRampToValueAtTime(0.001, start + duration);
+
+    osc.connect(filter).connect(env).connect(this.masterGain);
+    osc.start(start);
+    osc.stop(start + duration + 0.05);
+  }
+
+  private synthExhaustPop(start: number, volume: number): void {
+    if (!this.context || !this.masterGain) return;
+    const frameCount = Math.floor(this.context.sampleRate * 0.04);
+    const buffer = this.context.createBuffer(1, frameCount, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i += 1) data[i] = Math.random() * 2 - 1;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const env = this.context.createGain();
+    source.buffer = buffer;
+    filter.type = 'highpass';
+    filter.frequency.value = 750;
+    env.gain.setValueAtTime(volume, start);
+    env.gain.exponentialRampToValueAtTime(0.0001, start + 0.038);
+    source.connect(filter).connect(env).connect(this.masterGain);
+    source.start(start);
+  }
+
+  private synthTurboWhoosh(start: number, volume: number): void {
+    if (!this.context || !this.masterGain) return;
+    const frameCount = Math.floor(this.context.sampleRate * 0.28);
+    const buffer = this.context.createBuffer(1, frameCount, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i += 1) data[i] = Math.random() * 2 - 1;
+    const source = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const env = this.context.createGain();
+    source.buffer = buffer;
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1200, start);
+    filter.frequency.exponentialRampToValueAtTime(2800, start + 0.14);
+    filter.frequency.exponentialRampToValueAtTime(900, start + 0.28);
+    env.gain.setValueAtTime(0.001, start);
+    env.gain.linearRampToValueAtTime(volume, start + 0.08);
+    env.gain.linearRampToValueAtTime(0.001, start + 0.28);
+    source.connect(filter).connect(env).connect(this.masterGain);
+    source.start(start);
+  }
+
+  private synthSuperchargerWhine(
+    start: number,
+    startFreq: number,
+    peakFreq: number,
+    duration: number,
+    volume: number,
+  ): void {
+    if (!this.context || !this.masterGain) return;
+    const osc = this.context.createOscillator();
+    const env = this.context.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(startFreq, start);
+    osc.frequency.exponentialRampToValueAtTime(peakFreq, start + duration * 0.4);
+    osc.frequency.exponentialRampToValueAtTime(startFreq * 0.8, start + duration);
+    env.gain.setValueAtTime(0.001, start);
+    env.gain.linearRampToValueAtTime(volume, start + duration * 0.35);
+    env.gain.linearRampToValueAtTime(0.001, start + duration);
+    osc.connect(env).connect(this.masterGain);
+    osc.start(start);
+    osc.stop(start + duration + 0.05);
+  }
+
+  private synthElectricGlide(
+    start: number,
+    startFreq: number,
+    peakFreq: number,
+    duration: number,
+    volume: number,
+  ): void {
+    if (!this.context || !this.masterGain) return;
+    const osc1 = this.context.createOscillator();
+    const osc2 = this.context.createOscillator();
+    const env = this.context.createGain();
+    osc1.type = 'sine';
+    osc2.type = 'sine';
+    osc1.frequency.setValueAtTime(startFreq, start);
+    osc1.frequency.exponentialRampToValueAtTime(peakFreq, start + duration * 0.45);
+    osc1.frequency.exponentialRampToValueAtTime(startFreq, start + duration);
+    osc2.frequency.setValueAtTime(startFreq + 5, start);
+    osc2.frequency.exponentialRampToValueAtTime(peakFreq + 8, start + duration * 0.45);
+    osc2.frequency.exponentialRampToValueAtTime(startFreq + 5, start + duration);
+    env.gain.setValueAtTime(0.001, start);
+    env.gain.linearRampToValueAtTime(volume, start + duration * 0.35);
+    env.gain.linearRampToValueAtTime(0.001, start + duration);
+    osc1.connect(env);
+    osc2.connect(env);
+    env.connect(this.masterGain);
+    osc1.start(start);
+    osc2.start(start);
+    osc1.stop(start + duration + 0.05);
+    osc2.stop(start + duration + 0.05);
   }
 }

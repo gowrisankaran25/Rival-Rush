@@ -64,6 +64,7 @@ export class DrivingApplication {
   start(): void {
     this.fullscreenButton.hidden = !document.fullscreenEnabled;
     this.bindUiEvents();
+    this.syncMenuSoundtrackUi();
     this.assetsReady = this.installAssets();
   }
 
@@ -97,6 +98,7 @@ export class DrivingApplication {
           this.audio.setEnabled(enabled);
           const muteBtn = byId<HTMLButtonElement>('mute-button');
           if (muteBtn) muteBtn.textContent = enabled ? 'SOUND ON' : 'SOUND OFF';
+          this.syncMenuSoundtrackUi();
         },
         onTestSound: () => this.audio.testSound(),
       },
@@ -113,9 +115,32 @@ export class DrivingApplication {
       'change',
       (event) => {
         this.driverCar = (event.currentTarget as HTMLSelectElement).value as CarModelId;
+        this.audio.startMenuMusic();
+        this.audio.previewCarEngine(this.driverCar);
+        this.syncMenuSoundtrackUi();
       },
       options,
     );
+    const menuSoundtrackBtn = document.getElementById('menu-soundtrack-btn');
+    if (menuSoundtrackBtn) {
+      menuSoundtrackBtn.addEventListener(
+        'click',
+        () => {
+          this.audio.toggleMenuMusic();
+          this.syncMenuSoundtrackUi();
+        },
+        options,
+      );
+    }
+    const unlockMenuAudio = () => {
+      if (this.game?.getPhase() !== 'playing') {
+        this.audio.startMenuMusic();
+        this.syncMenuSoundtrackUi();
+      }
+    };
+    window.addEventListener('pointerdown', unlockMenuAudio, { once: true, capture: true });
+    window.addEventListener('keydown', unlockMenuAudio, { once: true, capture: true });
+
     byId<HTMLInputElement>('driver-color').addEventListener(
       'input',
       (event) => {
@@ -159,6 +184,7 @@ export class DrivingApplication {
         (event.currentTarget as HTMLButtonElement).textContent = this.soundEnabled
           ? 'SOUND ON'
           : 'SOUND OFF';
+        this.syncMenuSoundtrackUi();
       },
       options,
     );
@@ -367,8 +393,7 @@ export class DrivingApplication {
   private beginRun(): void {
     if (!this.game) return;
     this.audio.setCarModel(this.driverCar);
-    this.audio.start();
-    this.audio.setPlaying(true);
+    this.audio.startRacingMusic();
     this.overlay.classList.add('is-hidden');
     this.hud.show();
     this.game.start();
@@ -547,5 +572,20 @@ export class DrivingApplication {
       this.pauseButton.textContent = 'PAUSE';
     }
     this.resumeAfterSound = false;
+  }
+
+  private syncMenuSoundtrackUi(): void {
+    const btn = document.getElementById('menu-soundtrack-btn');
+    const badge = document.getElementById('soundtrack-badge');
+    const subtitle = document.getElementById('soundtrack-subtitle');
+    if (!btn || !badge) return;
+    const active = this.audio.isMenuMusicActive();
+    btn.classList.toggle('is-muted', !active);
+    badge.textContent = active ? 'PLAYING' : 'MUTED';
+    if (subtitle) {
+      subtitle.textContent = active
+        ? 'ATMOSPHERIC MENU THEME • ENGINE PREVIEWS ACTIVE'
+        : 'CLICK TO PLAY REALISTIC MENU SOUNDTRACK';
+    }
   }
 }

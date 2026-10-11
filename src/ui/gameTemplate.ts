@@ -171,6 +171,16 @@ export function createGameTemplate(): string {
             <label><span>TRAFFIC CARS</span><select id="traffic-count" aria-label="Choose number of traffic cars">${trafficOptions}</select></label>
             <label><span>CAR VARIETY</span><select id="car-model-count" aria-label="Choose number of different car models">${varietyOptions}</select></label>
           </div>
+          <div class="menu-soundtrack-banner">
+            <button id="menu-soundtrack-btn" class="menu-soundtrack-btn" type="button" aria-label="Toggle realistic menu soundtrack">
+              <span class="music-pulse-icon"><i>♪</i></span>
+              <span class="soundtrack-info">
+                <strong>REALISTIC RACING SOUNDTRACK</strong>
+                <small id="soundtrack-subtitle">ATMOSPHERIC MENU THEME &bull; ENGINE PREVIEWS ACTIVE</small>
+              </span>
+              <span id="soundtrack-badge" class="soundtrack-badge">PLAYING</span>
+            </button>
+          </div>
           <p class="traffic-performance-note"><i>!</i> More traffic cars or model variety may reduce frame rates on lower-powered devices.</p>
           <div class="modal-actions">
             <button id="camera-start" class="primary-button"><span>START WITH HANDS</span><i>→</i></button>

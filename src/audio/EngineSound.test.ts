@@ -68,4 +68,29 @@ describe('EngineSound', () => {
     const reloaded = new EngineSound();
     expect(reloaded.getEnabled()).toBe(false);
   });
+
+  it('manages menu music state and audio mode transitions', () => {
+    const audio = new EngineSound();
+    expect(audio.getMode()).toBe('menu');
+    expect(audio.isMenuMusicActive()).toBe(true);
+
+    const toggled = audio.toggleMenuMusic();
+    expect(toggled).toBe(false);
+    expect(audio.isMenuMusicActive()).toBe(false);
+
+    audio.startMenuMusic();
+    expect(audio.getMode()).toBe('menu');
+    expect(audio.isMenuMusicActive()).toBe(true);
+
+    audio.startRacingMusic();
+    expect(audio.getMode()).toBe('racing');
+
+    // Safe execution of previewCarEngine
+    expect(() => {
+      audio.previewCarEngine('oldsmobile-cutlass');
+      audio.previewCarEngine('ford-gt40');
+      audio.previewCarEngine('skyline-r34');
+      audio.previewCarEngine('ford-gt-2006');
+    }).not.toThrow();
+  });
 });

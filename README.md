@@ -17,7 +17,7 @@ A stylized endless-driving game controlled by a two-hand virtual steering wheel.
 - **Vehicle Customization:** Select your driver car model and apply custom paint colors using the picker on the start screen.
 - **Dynamic Weather:** Drive through changing weather conditions, including rainstorms and snowfall, which smoothly transition as you progress.
 - **Multiple Camera Views:** Press the `C` key to cycle between 6 different camera angles, including a first-person Driver View, chase cameras, and side perspectives.
-- **Custom Engine Audio & Volume Boost:** Each vehicle type features a unique, procedurally generated Web Audio engine profile that revs dynamically with your speed. Fine-tune audio in the Sound Settings dialog with up to 200% volume boost, independent engine/synth sliders, and quick presets.
+- **Realistic Main Menu Soundtrack & Dynamic Engine Audio:** Enjoy an atmospheric cinematic electronic soundtrack right on the main menu, complete with signature throttle revs and exhaust notes for each car model when selected in the showroom. In-game, engine pitch maps dynamically to vehicle speed, with a dedicated Sound Settings dialog supporting up to 200% volume boost.
 
 ## Racing
 
