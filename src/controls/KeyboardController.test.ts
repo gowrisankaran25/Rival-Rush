@@ -14,8 +14,8 @@ class FakeKeyboardTarget {
     this.listeners.get(type)?.delete(listener);
   }
 
-  dispatch(type: 'keydown' | 'keyup', code: string): void {
-    const event = { code } as KeyboardEvent;
+  dispatch(type: 'keydown' | 'keyup', code: string, repeat = false): void {
+    const event = { code, repeat } as KeyboardEvent;
     this.listeners.get(type)?.forEach((listener) => listener(event));
   }
 
@@ -65,6 +65,32 @@ describe('KeyboardController', () => {
       braking: false,
       active: false,
     });
+    keyboard.dispose();
+  });
+
+  it('shifts gear step-by-step and ignores held key repeats', () => {
+    const target = new FakeKeyboardTarget();
+    const keyboard = new KeyboardController(target as unknown as Window);
+
+    // Initial upshift via ShiftLeft
+    target.dispatch('keydown', 'ShiftLeft');
+    expect(keyboard.getInput().gearShift).toBe(1);
+    // Consumed immediately on read (single-shot)
+    expect(keyboard.getInput().gearShift).toBeUndefined();
+
+    // Key repeat from holding down Shift should be ignored
+    target.dispatch('keydown', 'ShiftLeft', true);
+    expect(keyboard.getInput().gearShift).toBeUndefined();
+
+    // Explicit downshift via KeyQ
+    target.dispatch('keydown', 'KeyQ');
+    expect(keyboard.getInput().gearShift).toBe(-1);
+    expect(keyboard.getInput().gearShift).toBeUndefined();
+
+    // Key repeat from holding down Q should be ignored
+    target.dispatch('keydown', 'KeyQ', true);
+    expect(keyboard.getInput().gearShift).toBeUndefined();
+
     keyboard.dispose();
   });
 });

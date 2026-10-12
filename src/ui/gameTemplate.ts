@@ -33,6 +33,8 @@ export function createGameTemplate(): string {
           <div id="tracking-pill" class="tracking-pill">
             <span class="status-dot"></span><span id="tracking-label">INPUT NOT SET</span>
           </div>
+          <button id="camera-button" class="icon-button" aria-label="Change camera view angle (C)"><span class="camera-button-label">CAM: FRONT ROAD</span><span class="camera-button-label-compact">CAM</span></button>
+          <button id="weather-button" class="icon-button" aria-label="Change weather condition"><span class="weather-button-label">WEATHER: AUTO</span><span class="weather-button-label-compact">WTH</span></button>
           <button id="graphics-button" class="icon-button" aria-label="Open graphics settings"><span class="graphics-button-label">GRAPHICS</span><span class="graphics-button-label-compact">GFX</span></button>
           <button id="sound-button" class="icon-button" aria-label="Open sound settings"><span class="sound-button-label">SOUND</span><span class="sound-button-label-compact">VOL</span></button>
           <button id="fullscreen-button" class="icon-button" aria-label="Enter full screen" aria-pressed="false">FULL SCREEN</button>
@@ -46,6 +48,14 @@ export function createGameTemplate(): string {
         <div class="speed-panel">
           <div class="speed-number"><span id="speed">000</span><small>KM/H</small></div>
           <div class="speed-track"><span id="speed-fill"></span></div>
+        </div>
+        <div class="gear-panel" aria-label="Sequential transmission control">
+          <div class="gear-badge"><small>GEAR</small><strong id="gear-indicator">3</strong></div>
+          <div class="gear-controls">
+            <button id="gear-down-btn" class="gear-btn" type="button" aria-label="Shift gear down" title="Shift Down (Left Paddle / Q)">−</button>
+            <span id="gear-name">3RD</span>
+            <button id="gear-up-btn" class="gear-btn" type="button" aria-label="Shift gear up" title="Shift Up (Right Paddle / E / Shift)">+</button>
+          </div>
         </div>
         <div class="run-stats">
           <div><span>DISTANCE</span><strong id="distance">0.00 <small>KM</small></strong></div>
@@ -156,17 +166,25 @@ export function createGameTemplate(): string {
           <h1>YOUR HANDS.<br><em>YOUR ROAD.</em></h1>
           <p class="lead">Grip an invisible wheel. Raise both thumbs to slow down, or show both palms to stop.</p>
           <div class="wheel-guide" aria-hidden="true">
-            <div class="hand hand-left"><span></span><b>LEFT HAND</b></div>
+            <div class="hand hand-left"><span></span><b>LEFT HAND<br><small>PADDLE (−)</small></b></div>
             <div class="virtual-wheel"><span class="wheel-center"></span></div>
-            <div class="hand hand-right"><span></span><b>RIGHT HAND</b></div>
+            <div class="hand hand-right"><span></span><b>RIGHT HAND<br><small>PADDLE (+)</small></b></div>
           </div>
           <div class="instruction-row">
             <div><b>01</b><span>Allow camera<br>access</span></div>
-            <div><b>02</b><span>Hold two closed<br>hands apart</span></div>
-            <div><b>03</b><span>Thumbs up: half brake<br>open palms: full brake</span></div>
+            <div><b>02</b><span>Closed hands<br>steer wheel</span></div>
+            <div><b>03</b><span>Raise right index:<br>gear up & boost speed</span></div>
+            <div><b>04</b><span>Thumbs: half brake<br>palms: full stop</span></div>
           </div>
           <div id="car-options" class="car-options">
             <label><span>YOUR CAR</span><select id="driver-car" aria-label="Choose your car model">${carOptions}</select></label>
+            <label><span>CAMERA VIEW</span><select id="camera-select" aria-label="Choose starting camera view">
+              <option value="0" selected>FRONT ROAD (FIRST PERSON)</option>
+              <option value="1">CHASE (THIRD PERSON)</option>
+              <option value="2">FAR CHASE (AERIAL)</option>
+              <option value="3">HOOD (BONNET MOUNT)</option>
+              <option value="4">BUMPER (LOW ROAD)</option>
+            </select></label>
             <label><span>PAINT COLOR</span><input type="color" id="driver-color" aria-label="Choose your car color" value="#f5f7f4"></label>
             <label><span>TRAFFIC CARS</span><select id="traffic-count" aria-label="Choose number of traffic cars">${trafficOptions}</select></label>
             <label><span>CAR VARIETY</span><select id="car-model-count" aria-label="Choose number of different car models">${varietyOptions}</select></label>

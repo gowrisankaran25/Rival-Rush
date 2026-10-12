@@ -22,6 +22,9 @@ import type { LoadedCarModel } from './vehicleAssets';
 import { DEFAULT_CAR_MODEL_ID, selectCarModelIds } from './vehicleCatalog';
 import type { CarModelId } from './vehicleCatalog';
 import { RoadsideFenceSystem } from './world/RoadsideFenceSystem';
+import { WeatherSystem } from './weather/WeatherSystem';
+import type { WeatherMode, WeatherType } from './weather/WeatherSystem';
+import { WindshieldWeatherOverlay } from '../ui/WindshieldWeatherOverlay';
 
 interface TrafficCar {
   mesh: THREE.Group;
@@ -55,14 +58,141 @@ const SNOW_TILE_METERS = GROUND_SIZE / SNOW_TEXTURE_REPEAT;
 const ROAD_UPDATE_INTERVAL = 1 / 30;
 const IDLE_RENDER_INTERVAL_MS = 200;
 
-// ── Immersive cockpit camera constants ──
-const COCKPIT_LOOK_AHEAD = 18; // Look-at distance forward
-const COCKPIT_LOOK_HEIGHT = 0.9; // Look-at height
+// ── Camera Modes & Perspective Configurations ──
+export interface CameraModeConfig {
+  id: number;
+  name: string;
+  label: string;
+  camBack: number;
+  camHeight: number;
+  lookAhead: number;
+  lookHeight: number;
+  showCar: boolean;
+}
+
+const DRIVER_EYE_HEIGHT = 1.22; // Realistic driver eye height above road (meters)
+const DRIVER_FORWARD_OFFSET = 0.55; // Forward position at driver's windshield eyeline
+const ROAD_LOOK_AHEAD = 36.0; // Distance forward down the road
+const ROAD_LOOK_HEIGHT = 1.16; // Horizon-level target height
 const BASE_FOV = 72; // Wide FOV for immersion
-const NITRO_FOV = 98; // Extreme FOV on nitro
-const MAX_SHAKE_INTENSITY = 0.06; // Camera shake at max speed
-const MAX_ROLL_ANGLE = 0.045; // Body roll on steering
+const NITRO_FOV = 96; // Extreme FOV on nitro
+const MAX_SHAKE_INTENSITY = 0.024; // Subtle, stable road vibration
+const MAX_ROLL_ANGLE = 0.038; // Subtle body roll on steering turns
 const SPEED_LINE_COUNT = 120; // Number of speed-line particles
+
+export const CAMERA_CONFIGS: readonly CameraModeConfig[] = [
+  {
+    id: 0,
+    name: 'FRONT ROAD',
+    label: 'FRONT ROAD (FIRST PERSON)',
+    camBack: -DRIVER_FORWARD_OFFSET,
+    camHeight: DRIVER_EYE_HEIGHT,
+    lookAhead: ROAD_LOOK_AHEAD,
+    lookHeight: ROAD_LOOK_HEIGHT,
+    showCar: false,
+  },
+  {
+    id: 1,
+    name: 'CHASE',
+    label: 'CHASE (THIRD PERSON)',
+    camBack: 6.2,
+    camHeight: 2.35,
+    lookAhead: 15.0,
+    lookHeight: 1.35,
+    showCar: true,
+  },
+  {
+    id: 2,
+    name: 'FAR CHASE',
+    label: 'FAR CHASE (AERIAL)',
+    camBack: 11.5,
+    camHeight: 4.2,
+    lookAhead: 19.0,
+    lookHeight: 1.6,
+    showCar: true,
+  },
+  {
+    id: 3,
+    name: 'HOOD',
+    label: 'HOOD (BONNET MOUNT)',
+    camBack: -0.55,
+    camHeight: 1.05,
+    lookAhead: 34.0,
+    lookHeight: 1.0,
+    showCar: false,
+  },
+  {
+    id: 4,
+    name: 'BUMPER',
+    label: 'BUMPER (LOW ROAD)',
+    camBack: -1.6,
+    camHeight: 0.58,
+    lookAhead: 36.0,
+    lookHeight: 0.75,
+    showCar: false,
+  },
+];
+
+// ── Sequential Gearbox Specifications ──
+export interface GearSpec {
+  gear: number;
+  label: string;
+  name: string;
+  maxSpeedKph: number;
+  maxSpeedMs: number;
+  accelMultiplier: number;
+}
+
+export const GEAR_SPECS: readonly GearSpec[] = [
+  {
+    gear: 1,
+    label: '1ST',
+    name: 'GEAR 1 · CITY',
+    maxSpeedKph: 60,
+    maxSpeedMs: 16.7,
+    accelMultiplier: 1.4,
+  },
+  {
+    gear: 2,
+    label: '2ND',
+    name: 'GEAR 2 · CRUISE',
+    maxSpeedKph: 100,
+    maxSpeedMs: 27.8,
+    accelMultiplier: 1.25,
+  },
+  {
+    gear: 3,
+    label: '3RD',
+    name: 'GEAR 3 · DRIVE',
+    maxSpeedKph: 140,
+    maxSpeedMs: 38.9,
+    accelMultiplier: 1.1,
+  },
+  {
+    gear: 4,
+    label: '4TH',
+    name: 'GEAR 4 · SPORT',
+    maxSpeedKph: 180,
+    maxSpeedMs: 50.0,
+    accelMultiplier: 1.25,
+  },
+  {
+    gear: 5,
+    label: '5TH',
+    name: 'GEAR 5 · SUPER',
+    maxSpeedKph: 220,
+    maxSpeedMs: 61.1,
+    accelMultiplier: 1.4,
+  },
+  {
+    gear: 6,
+    label: '6TH',
+    name: 'GEAR 6 · HYPER',
+    maxSpeedKph: 260,
+    maxSpeedMs: 72.2,
+    accelMultiplier: 1.6,
+  },
+];
 
 export class DrivingGame {
   private readonly scene = new THREE.Scene();
@@ -129,11 +259,13 @@ export class DrivingGame {
   private speedLineVelocities?: Float32Array;
   private currentFov = BASE_FOV;
   private cameraMode = 0; // 0: Cockpit, 1: Hood, 2: Chase
+  private currentGear = 3; // Default 3rd gear (Drive / Highway Cruise)
+  private gearShiftCooldown = 0;
+  private gearShiftSurge = 0;
 
   // ── Dynamic Weather ──
-  private weatherParticles?: THREE.Points;
-  private weatherPositions?: Float32Array;
-  private weatherVelocities?: Float32Array;
+  private readonly weatherSystem: WeatherSystem;
+  private readonly windshieldOverlay: WindshieldWeatherOverlay;
 
   constructor(
     private readonly container: HTMLElement,
@@ -142,6 +274,7 @@ export class DrivingGame {
     private readonly onCrash: () => void,
     private readonly onHorn: () => void,
     private readonly onPerformanceUpdate: (snapshot: PerformanceSnapshot) => void,
+    private readonly onGearShift?: (gear: number, direction: 1 | -1) => void,
   ) {
     this.scene.background = new THREE.Color(0x9bb8bd);
     this.scene.fog = new THREE.FogExp2(0x9bb8bd, 0.0025);
@@ -233,7 +366,7 @@ export class DrivingGame {
         color: 0xe6edef,
         map: groundSnowTexture,
         transparent: true,
-        opacity: 0.72,
+        opacity: 0,
         depthWrite: false,
         roughness: 1,
         metalness: 0,
@@ -244,11 +377,22 @@ export class DrivingGame {
     this.groundSnow.position.y = -0.075;
     this.groundSnow.receiveShadow = true;
     this.groundSnow.renderOrder = 1;
+    this.groundSnow.visible = false;
     this.scene.add(this.groundSnow);
 
     this.roadsideFences = new RoadsideFenceSystem(this.scene);
 
     this.lighting = addSceneLighting(this.scene, this.adaptiveQuality.settings.shadowMapSize);
+
+    this.weatherSystem = new WeatherSystem({
+      scene: this.scene,
+      lighting: this.lighting,
+      roadMaterial,
+      shoulderMaterial,
+      groundSnow: this.groundSnow,
+    });
+    this.windshieldOverlay = new WindshieldWeatherOverlay({ container });
+
     this.setupWorld();
     this.setupInteractables();
     const natureReady = this.sceneryAssets.loadNature(this.scenery);
@@ -261,13 +405,14 @@ export class DrivingGame {
       this.sceneAssetsLoaded = true;
     });
 
+    this.player.visible = false;
     this.scene.add(this.player);
+
+    // Initialize camera immediately at the driver's-eye road view for frame 0
+    this.setupInitialCamera();
 
     // ── Speed-line particle system for immersive rushing feel ──
     this.initSpeedLines();
-    this.initWeather();
-
-    // Cockpit overlay removed
 
     this.resize();
     window.addEventListener('resize', this.resize);
@@ -283,8 +428,95 @@ export class DrivingGame {
     this.clock.getDelta();
   }
 
-  toggleCameraAngle(): void {
-    this.cameraMode = (this.cameraMode + 1) % 6;
+  toggleCameraAngle(): string {
+    return this.cycleCameraMode();
+  }
+
+  cycleCameraMode(): string {
+    this.cameraMode = (this.cameraMode + 1) % CAMERA_CONFIGS.length;
+    const mode = CAMERA_CONFIGS[this.cameraMode];
+    this.assistMessage = `CAM: ${mode.name} [C]`;
+    return mode.name;
+  }
+
+  setCameraMode(modeIndex: number): string {
+    this.cameraMode = Math.max(0, Math.min(CAMERA_CONFIGS.length - 1, modeIndex));
+    const mode = CAMERA_CONFIGS[this.cameraMode];
+    this.assistMessage = `CAM: ${mode.name} [C]`;
+    return mode.name;
+  }
+
+  getCameraMode(): number {
+    return this.cameraMode;
+  }
+
+  getCameraModeName(): string {
+    return CAMERA_CONFIGS[this.cameraMode]?.name ?? 'FRONT ROAD';
+  }
+
+  shiftGear(direction: 1 | -1, force = false): number {
+    if (!force && this.gearShiftCooldown > 0) {
+      return this.currentGear;
+    }
+    const nextGear = Math.max(1, Math.min(GEAR_SPECS.length, this.currentGear + direction));
+    if (nextGear !== this.currentGear) {
+      this.gearShiftCooldown = 0.35;
+      this.currentGear = nextGear;
+      const spec = GEAR_SPECS[this.currentGear - 1];
+      if (direction > 0) {
+        this.assistMessage = `${spec.name} ▲ BOOST (${spec.maxSpeedKph} KM/H)`;
+        this.gearShiftSurge = 0.08;
+      } else {
+        this.assistMessage = `${spec.name} ▼ BRAKE (${spec.maxSpeedKph} KM/H)`;
+        this.gearShiftSurge = -0.04;
+      }
+      this.onGearShift?.(this.currentGear, direction);
+    }
+    return this.currentGear;
+  }
+
+  setGear(gear: number): number {
+    const clamped = Math.max(1, Math.min(GEAR_SPECS.length, Math.round(gear)));
+    if (clamped !== this.currentGear) {
+      const direction = clamped > this.currentGear ? 1 : -1;
+      this.currentGear = clamped;
+      const spec = GEAR_SPECS[this.currentGear - 1];
+      this.assistMessage = `${spec.name} (${spec.maxSpeedKph} KM/H)`;
+      this.onGearShift?.(this.currentGear, direction);
+    }
+    return this.currentGear;
+  }
+
+  getCurrentGear(): number {
+    return this.currentGear;
+  }
+
+  getGearSpec(): GearSpec {
+    return GEAR_SPECS[this.currentGear - 1];
+  }
+
+  getWeatherType(): WeatherType {
+    return this.weatherSystem.getWeatherType();
+  }
+
+  getWeatherMode(): WeatherMode {
+    return this.weatherSystem.getMode();
+  }
+
+  setWeatherMode(mode: WeatherMode): void {
+    this.weatherSystem.setMode(mode);
+  }
+
+  cycleWeather(): WeatherMode {
+    const nextMode = this.weatherSystem.cycleMode();
+    const modeLabels: Record<WeatherMode, string> = {
+      auto: 'DYNAMIC AUTO',
+      rain: 'TORRENTIAL RAIN',
+      snow: 'WINTER BLIZZARD',
+      clear: 'CLEAR SKIES',
+    };
+    this.assistMessage = `WEATHER: ${modeLabels[nextMode]}`;
+    return nextMode;
   }
 
   pause(): void {
@@ -319,7 +551,11 @@ export class DrivingGame {
     this.assistMessage = 'READY';
     this.hornCooldown = 0;
     this.phase = 'ready';
+    this.currentGear = 3;
+    this.gearShiftCooldown = 0;
+    this.gearShiftSurge = 0;
     this.vehicleAssets.setBrakeLights(this.player, false);
+    this.setupInitialCamera();
     let ongoingCursor = 45;
     let incomingCursor = 62;
     this.traffic.forEach((car, index) => {
@@ -539,6 +775,11 @@ export class DrivingGame {
       playerModel.id,
       this.driverColor,
     );
+    const initialCamConfig = CAMERA_CONFIGS[this.cameraMode] ?? CAMERA_CONFIGS[0];
+    this.player.visible = initialCamConfig.showCar;
+    this.player.traverse((child) => {
+      child.visible = initialCamConfig.showCar;
+    });
 
     const trafficStart = Math.floor(Math.random() * available.length);
     this.traffic.forEach((car, index) => {
@@ -574,6 +815,7 @@ export class DrivingGame {
 
   private updateSimulation(dt: number): void {
     if (this.collisionCooldown > 0) this.collisionCooldown -= dt;
+    if (this.gearShiftCooldown > 0) this.gearShiftCooldown -= dt;
     if (this.nitroTimer > 0) {
       this.nitroTimer -= dt;
       this.speed = Math.max(this.speed, 35);
@@ -621,7 +863,17 @@ export class DrivingGame {
     }
 
     const control = this.getControl();
-    const curveLimit = curveSpeedLimit(this.distance, GAME.maxSpeed, GAME.minCurveSpeed);
+
+    // Process gear shift inputs from webcam gesture (paddle shift) or keyboard
+    if (control.gearShift) {
+      this.shiftGear(control.gearShift);
+    } else if (control.targetGear !== undefined) {
+      this.setGear(control.targetGear);
+    }
+
+    const currentGearSpec = GEAR_SPECS[this.currentGear - 1];
+    const gearMaxSpeed = currentGearSpec.maxSpeedMs;
+    const curveLimit = curveSpeedLimit(this.distance, gearMaxSpeed, GAME.minCurveSpeed);
     const conceptDriver = this.driverCar === 'luxury-concept';
     const collisionLength = conceptDriver ? GAME.conceptCollisionLength : GAME.collisionLength;
     const collisionWidth = conceptDriver ? GAME.conceptCollisionWidth : GAME.collisionWidth;
@@ -640,8 +892,15 @@ export class DrivingGame {
       }
     }
 
-    const threat = scanTraffic(this.traffic, this.distance, this.lateral, curveLimit);
-    const speedPlan = createSpeedPlan(control, this.speed, curveLimit, threat);
+    const threat = scanTraffic(this.traffic, this.distance, this.lateral, curveLimit, gearMaxSpeed);
+    const speedPlan = createSpeedPlan(
+      control,
+      this.speed,
+      curveLimit,
+      threat,
+      gearMaxSpeed,
+      currentGearSpec.accelMultiplier,
+    );
     const { targetSpeed, acceleration, safetyBraking } = speedPlan;
     this.assistMessage = speedPlan.assistMessage;
     this.vehicleAssets.setBrakeLights(this.player, safetyBraking || control.braking === true);
@@ -834,8 +1093,13 @@ export class DrivingGame {
       }
     }
 
-    // ── Immersive cockpit FOV ──
-    const targetFov = this.nitroTimer > 0 ? NITRO_FOV : BASE_FOV;
+    // ── Immersive cockpit FOV (dynamic velocity expansion in top gears) ──
+    const targetFov =
+      this.nitroTimer > 0
+        ? NITRO_FOV
+        : this.currentGear >= 5
+          ? BASE_FOV + (this.currentGear - 4) * 6
+          : BASE_FOV;
     this.currentFov = damp(this.currentFov, targetFov, 5, dt);
     this.camera.fov = this.currentFov;
     this.camera.updateProjectionMatrix();
@@ -884,113 +1148,97 @@ export class DrivingGame {
       -this.groundSnow.position.z / SNOW_TILE_METERS,
     );
 
-    // ── Immersive cockpit camera positioning ──
+    // ── Dynamic Camera Placement by Mode ──
+    const camConfig = CAMERA_CONFIGS[this.cameraMode] ?? CAMERA_CONFIGS[0];
+    this.player.visible = camConfig.showCar;
+    this.player.traverse((child) => {
+      child.visible = camConfig.showCar;
+    });
+
     this.forward.set(-Math.sin(this.vehicleHeading), 0, -Math.cos(this.vehicleHeading));
     this.shadowCenter.copy(this.player.position).addScaledVector(this.forward, 32);
     updateSceneShadow(this.lighting, this.shadowCenter);
 
-    // Apply selected camera mode
-    // Default to Driver View (Mode 0)
-    let camBack = -0.15;
-    let camHeight = 1.15;
-    let lookAhead = COCKPIT_LOOK_AHEAD;
-    let camRight = -0.35;
-    let targetRight = 0;
-    let targetHeight = COCKPIT_LOOK_HEIGHT;
+    const control = this.getControl();
+    const gearMaxSpeed = GEAR_SPECS[this.currentGear - 1].maxSpeedMs;
 
-    // Modes:
-    // 0: Driver View (first person)
-    // 1: Chase (back view)
-    // 2: Far Chase (zoom out view)
-    // 3: Left side view
-    // 4: Right side view
-    // 5: Face View (looking at front of car)
-
-    if (this.cameraMode === 1) {
-      // Chase
-      camBack = 6.0;
-      camHeight = 2.4;
-      camRight = 0;
-      lookAhead = 12;
-    } else if (this.cameraMode === 2) {
-      // Far Chase
-      camBack = 12.0;
-      camHeight = 4.2;
-      camRight = 0;
-      lookAhead = 15;
-    } else if (this.cameraMode === 3) {
-      // Left Side
-      camBack = 1.0;
-      camRight = -4.0;
-      camHeight = 1.4;
-      lookAhead = 8;
-      targetRight = 1.0;
-    } else if (this.cameraMode === 4) {
-      // Right Side
-      camBack = 1.0;
-      camRight = 4.0;
-      camHeight = 1.4;
-      lookAhead = 8;
-      targetRight = -1.0;
-    } else if (this.cameraMode === 5) {
-      // Face View
-      camBack = -8.0;
-      camHeight = 1.8;
-      camRight = 0;
-      lookAhead = -2.0;
-      targetHeight = 1.0;
+    // Subtle pitch dynamics on throttle and braking
+    let pitchOffset = 0;
+    let surgeOffset = 0;
+    this.gearShiftSurge = damp(this.gearShiftSurge, 0, 8, dt);
+    surgeOffset += this.gearShiftSurge;
+    if (control.braking) {
+      const brakeStrength = control.brakePressure ?? 1.0;
+      pitchOffset -= (camConfig.showCar ? 0.03 : 0.05) * brakeStrength; // Nose dips under braking
+      surgeOffset += 0.04 * brakeStrength;
+    } else if (control.accelerating && this.speed < gearMaxSpeed) {
+      pitchOffset += camConfig.showCar ? 0.018 : 0.025; // Nose lifts under acceleration
+      surgeOffset -= 0.025;
     }
 
-    // Hide car mesh in Driver view to prevent geometry clipping
-    const hideCar = this.cameraMode === 0;
-    this.player.children.forEach((child) => {
-      if (child.type === 'Group' || child.type === 'Mesh') {
-        child.visible = !hideCar;
-      }
-    });
-
-    this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -camBack);
-    if (camRight !== 0) {
-      const rightVec = new THREE.Vector3()
-        .crossVectors(this.forward, new THREE.Vector3(0, 1, 0))
-        .normalize();
-      this.desiredCamera.addScaledVector(rightVec, camRight);
+    // Collision reaction: tactile jolt without nausea
+    let collisionJoltY = 0;
+    if (this.collisionCooldown > 0) {
+      collisionJoltY =
+        Math.sin(this.collisionCooldown * 25) * 0.04 * clamp(this.collisionCooldown, 0, 1);
     }
-    this.desiredCamera.y += camHeight;
 
-    // Speed-dependent camera shake for road vibration feel
-    const speedRatio = clamp(this.speed / GAME.maxSpeed, 0, 1);
+    // Desired camera position
+    this.desiredCamera
+      .copy(this.player.position)
+      .addScaledVector(this.forward, -camConfig.camBack + surgeOffset);
+    this.desiredCamera.y = camConfig.camHeight + collisionJoltY;
+
+    // Stable road vibration at high speed (avoiding excessive shaking)
+    const speedRatio = clamp(this.speed / gearMaxSpeed, 0, 1);
     const shakeIntensity = speedRatio * speedRatio * MAX_SHAKE_INTENSITY;
-    const shakeTime = performance.now() * 0.013;
+    const shakeTime = performance.now() * 0.012;
     this.cameraShakeOffset.set(
-      Math.sin(shakeTime * 1.7) * shakeIntensity * 0.7,
-      Math.sin(shakeTime * 2.3 + 1.1) * shakeIntensity * 0.5,
-      Math.sin(shakeTime * 1.1 + 2.7) * shakeIntensity * 0.3,
+      Math.sin(shakeTime * 1.5) * shakeIntensity * 0.4,
+      Math.sin(shakeTime * 2.1 + 1.1) * shakeIntensity * 0.25,
+      0,
     );
     this.desiredCamera.add(this.cameraShakeOffset);
 
-    this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-8 * dt));
+    // Smooth position tracking (graceful chase follow or tight front tracking)
+    const lerpRate = camConfig.showCar ? 11 : 14;
+    this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-lerpRate * dt));
 
-    this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, lookAhead);
-    if (targetRight !== 0) {
-      const rightVec = new THREE.Vector3()
-        .crossVectors(this.forward, new THREE.Vector3(0, 1, 0))
-        .normalize();
-      this.cameraTarget.addScaledVector(rightVec, targetRight);
-    }
-    this.cameraTarget.y += targetHeight;
+    // Look directly ahead toward target
+    this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, camConfig.lookAhead);
+    this.cameraTarget.y = camConfig.lookHeight + pitchOffset;
     this.camera.lookAt(this.cameraTarget);
 
-    // Body roll on turns – tilts the camera like a real car leaning
-    const targetRoll = -this.steeringVisual * MAX_ROLL_ANGLE * (0.4 + speedRatio * 0.6);
-    this.cameraRoll = damp(this.cameraRoll, targetRoll, 6, dt);
+    // Subtle lateral G-force body roll on steering turns
+    const rollScale = camConfig.showCar ? 0.65 : 1.0;
+    const targetRoll =
+      -this.steeringVisual * MAX_ROLL_ANGLE * rollScale * (0.35 + speedRatio * 0.65);
+    this.cameraRoll = damp(this.cameraRoll, targetRoll, 7, dt);
     this.camera.rotation.z += this.cameraRoll;
 
     // ── Update speed-line particles ──
     this.updateSpeedLines(dt, speedRatio);
-    this.updateWeather(dt);
+    this.weatherSystem.update(
+      dt,
+      this.distance,
+      this.speed,
+      this.vehicleHeading,
+      this.camera.position,
+      this.player.position,
+    );
+    this.windshieldOverlay.update(
+      dt,
+      this.weatherSystem.getRainIntensity(),
+      this.weatherSystem.getSnowIntensity(),
+      Math.round(this.speed * 3.6),
+      !camConfig.showCar,
+      this.steeringVisual,
+    );
 
-    // Overlay update removed
+    const climateNotice = this.weatherSystem.getClimateChangedNotice();
+    if (climateNotice && this.weatherSystem.getMode() === 'auto') {
+      this.assistMessage = climateNotice;
+    }
   }
 
   private animate = (): void => {
@@ -1039,6 +1287,15 @@ export class DrivingGame {
         phase: this.phase,
         assistMessage: this.assistMessage,
         health: this.health,
+        weatherType: this.weatherSystem.getWeatherType(),
+        rainIntensity: this.weatherSystem.getRainIntensity(),
+        snowIntensity: this.weatherSystem.getSnowIntensity(),
+        weatherMode: this.weatherSystem.getMode(),
+        cameraMode: this.cameraMode,
+        cameraModeName: this.getCameraModeName(),
+        currentGear: this.currentGear,
+        gearLabel: GEAR_SPECS[this.currentGear - 1].label,
+        gearMaxKph: GEAR_SPECS[this.currentGear - 1].maxSpeedKph,
       });
     }
   };
@@ -1180,99 +1437,19 @@ export class DrivingGame {
     posAttr.needsUpdate = true;
   }
 
-  // ── Weather System ──
-  private initWeather(): void {
-    const count = 4000;
-    const positions = new Float32Array(count * 3);
-    const velocities = new Float32Array(count * 3);
-
-    for (let i = 0; i < count; i++) {
-      positions[i * 3] = (Math.random() - 0.5) * 80;
-      positions[i * 3 + 1] = Math.random() * 40;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * 80;
-      velocities[i * 3] = 0;
-      velocities[i * 3 + 1] = -10 - Math.random() * 10;
-      velocities[i * 3 + 2] = 0;
-    }
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-    const material = new THREE.PointsMaterial({
-      size: 0.1,
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0, // Starts clear
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
+  private setupInitialCamera(): void {
+    const camConfig = CAMERA_CONFIGS[this.cameraMode] ?? CAMERA_CONFIGS[0];
+    this.player.visible = camConfig.showCar;
+    this.player.traverse((child) => {
+      child.visible = camConfig.showCar;
     });
-
-    this.weatherParticles = new THREE.Points(geometry, material);
-    this.weatherParticles.frustumCulled = false;
-    this.scene.add(this.weatherParticles);
-    this.weatherPositions = positions;
-    this.weatherVelocities = velocities;
-  }
-
-  private updateWeather(dt: number): void {
-    if (!this.weatherParticles || !this.weatherPositions || !this.weatherVelocities) return;
-
-    // Cycle every 5000 units of distance: Clear -> Rain -> Clear -> Snow
-    const cycle = (this.distance % 5000) / 5000;
-    let isRain = false;
-    let isSnow = false;
-    let targetOpacity = 0;
-
-    if (cycle > 0.2 && cycle < 0.5) {
-      isRain = true;
-      targetOpacity = Math.sin(((cycle - 0.2) / 0.3) * Math.PI) * 0.6;
-    } else if (cycle > 0.7 && cycle < 1.0) {
-      isSnow = true;
-      targetOpacity = Math.sin(((cycle - 0.7) / 0.3) * Math.PI) * 0.8;
-    }
-
-    const material = this.weatherParticles.material as THREE.PointsMaterial;
-    material.opacity = damp(material.opacity, targetOpacity, 1.0, dt);
-
-    // Smoothly transition sky and fog color to match weather
-    const targetFogColor = new THREE.Color(isRain ? 0x5a6973 : isSnow ? 0xccddee : 0x9bb8bd);
-    (this.scene.background as THREE.Color).lerp(targetFogColor, 0.5 * dt);
-    (this.scene.fog as THREE.FogExp2).color.lerp(targetFogColor, 0.5 * dt);
-
-    if (material.opacity < 0.01) return;
-
-    material.size = isSnow ? 0.3 : 0.08;
-    const fallSpeedBase = isRain ? 35 : 8;
-
-    // Position the weather volume around the camera
-    this.weatherParticles.position.copy(this.camera.position);
-
-    const positions = this.weatherPositions;
-    const count = positions.length / 3;
-
-    // Convert car speed to relative world movement for particles
-    const relZ = Math.cos(this.vehicleHeading) * this.speed * dt;
-    const relX = -Math.sin(this.vehicleHeading) * this.speed * dt;
-
-    for (let i = 0; i < count; i++) {
-      const i3 = i * 3;
-
-      positions[i3 + 1] -= (fallSpeedBase + (i % 5)) * dt;
-
-      // Shift particles to simulate wind & relative driving speed
-      positions[i3] -= relX * 0.5;
-      positions[i3 + 2] -= relZ * 0.5;
-
-      if (positions[i3 + 1] < -10) {
-        positions[i3] = (Math.random() - 0.5) * 80;
-        positions[i3 + 1] = 40 + Math.random() * 10;
-        positions[i3 + 2] = (Math.random() - 0.5) * 80;
-      }
-    }
-
-    const posAttr = this.weatherParticles.geometry.getAttribute(
-      'position',
-    ) as THREE.BufferAttribute;
-    posAttr.needsUpdate = true;
+    this.forward.set(-Math.sin(this.vehicleHeading), 0, -Math.cos(this.vehicleHeading));
+    this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -camConfig.camBack);
+    this.desiredCamera.y = camConfig.camHeight;
+    this.camera.position.copy(this.desiredCamera);
+    this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, camConfig.lookAhead);
+    this.cameraTarget.y = camConfig.lookHeight;
+    this.camera.lookAt(this.cameraTarget);
+    this.cameraRoll = 0;
   }
 }

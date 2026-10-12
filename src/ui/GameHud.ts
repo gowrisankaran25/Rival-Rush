@@ -12,6 +12,8 @@ export class GameHud {
   private readonly health = byId<HTMLElement>('health');
   private readonly assist = byId<HTMLElement>('assist').querySelector<HTMLElement>('span')!;
   private readonly steering = byId<HTMLElement>('steer-indicator');
+  private readonly gearIndicator = document.getElementById('gear-indicator');
+  private readonly gearName = document.getElementById('gear-name');
 
   show(): void {
     this.root.classList.remove('is-hidden');
@@ -26,5 +28,11 @@ export class GameHud {
     this.health.textContent = `${snapshot.health}%`;
     this.assist.textContent = snapshot.assistMessage;
     this.steering.style.left = `${50 + steering * 46}%`;
+    if (this.gearIndicator && snapshot.currentGear !== undefined) {
+      this.gearIndicator.textContent = String(snapshot.currentGear);
+    }
+    if (this.gearName && snapshot.gearLabel) {
+      this.gearName.textContent = snapshot.gearLabel;
+    }
   }
 }

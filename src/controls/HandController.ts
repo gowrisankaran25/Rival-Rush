@@ -5,7 +5,13 @@ import {
 } from '@mediapipe/tasks-vision';
 import { damp, steeringFromHands } from '../game/math';
 import type { ControlInput } from '../game/types';
-import { isClosedHand, isOpenPalm, isThumbUp, SustainedGesture } from './handGestures';
+import {
+  isClosedHand,
+  isIndexExtended,
+  isOpenPalm,
+  isThumbUp,
+  SustainedGesture,
+} from './handGestures';
 import type { HandTrackingResult, HandWorkerInput, HandWorkerOutput } from './handWorkerTypes';
 
 type TrackingStatus = 'idle' | 'loading' | 'ready' | 'calibrating' | 'tracking' | 'lost' | 'error';
@@ -52,6 +58,10 @@ export class HandController {
   private calibrationAngles: number[] = [];
   private input: ControlInput = { steering: 0, confidence: 0, active: false };
   private readonly brakeGesture = new SustainedGesture(BRAKE_GESTURE_HOLD_MS);
+  private wasRightIndexExtended = false;
+  private wasLeftIndexExtended = false;
+  private lastGearShiftTime = 0;
+  private pendingGearShift?: 1 | -1;
   private status: TrackingStatus = 'idle';
   private lastSeen = 0;
   private previewVisible = true;
@@ -207,7 +217,12 @@ export class HandController {
       this.resetBrakeGesture();
       return { steering: 0, confidence: 0, active: false };
     }
-    return { ...this.input };
+    const gearShift = this.pendingGearShift;
+    this.pendingGearShift = undefined;
+    return {
+      ...this.input,
+      gearShift,
+    };
   }
 
   getStatus(): TrackingStatus {
@@ -418,6 +433,26 @@ export class HandController {
     // half brake, while showing both open palms requests a complete stop.
     const rawBrakePressure = palmsOpen ? 1 : hands.every((hand) => hand.thumbUp) ? 0.5 : 0;
     const braking = this.brakeGesture.update(rawBrakePressure > 0, this.lastSeen);
+
+    // Paddle Shifter Gear Control Gestures:
+    // Right hand index extended (right paddle) -> Shift Gear UP by 1 (increase speed)
+    // Left hand index extended (left paddle) -> Shift Gear DOWN by 1
+    // Strictly one gear shift per gesture extension: player must release (fold finger back) before shifting again.
+    const rightIndex = isIndexExtended(hands[1].landmarks);
+    const leftIndex = isIndexExtended(hands[0].landmarks);
+    const now = this.lastSeen;
+
+    if (rightIndex && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 300) {
+      this.pendingGearShift = 1;
+      this.lastGearShiftTime = now;
+    } else if (leftIndex && !this.wasLeftIndexExtended && now - this.lastGearShiftTime > 300) {
+      this.pendingGearShift = -1;
+      this.lastGearShiftTime = now;
+    }
+
+    this.wasRightIndexExtended = rightIndex;
+    this.wasLeftIndexExtended = leftIndex;
+
     this.input = {
       steering: damp(this.input.steering, raw, 13, 1 / 30),
       confidence,
@@ -430,6 +465,9 @@ export class HandController {
 
   private resetBrakeGesture(): void {
     this.brakeGesture.reset();
+    this.wasRightIndexExtended = false;
+    this.wasLeftIndexExtended = false;
+    this.pendingGearShift = undefined;
   }
 
   private circularAverage(values: number[]): number {

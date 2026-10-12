@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { isClosedHand, isOpenPalm, isThumbUp, SustainedGesture } from './handGestures';
+import {
+  isClosedHand,
+  isIndexExtended,
+  isOpenPalm,
+  isThumbUp,
+  SustainedGesture,
+} from './handGestures';
 import type { HandPoint } from './handWorkerTypes';
 
 function createFist(thumb: 'up' | 'low' | 'folded' | 'sideways' | 'bent'): HandPoint[] {
@@ -102,5 +108,14 @@ describe('hand gestures', () => {
     expect(gesture.update(true, 1_180)).toBe(true);
     expect(gesture.update(false, 1_181)).toBe(false);
     expect(gesture.update(true, 1_200)).toBe(false);
+  });
+
+  it('recognizes an extended index finger paddle shift gesture while keeping grip closed', () => {
+    const points = createFist('folded');
+    points[8] = { x: 0.35, y: 0.28, z: 0 }; // index tip extended
+    expect(isIndexExtended(points)).toBe(true);
+    expect(isClosedHand(points)).toBe(true); // steering grip maintained!
+    expect(isIndexExtended(createFist('folded'))).toBe(false);
+    expect(isIndexExtended(createOpenPalm())).toBe(false);
   });
 });

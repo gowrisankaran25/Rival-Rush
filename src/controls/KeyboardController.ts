@@ -5,6 +5,8 @@ export class KeyboardController {
   private right = false;
   private accelerating = false;
   private braking = false;
+  private pendingGearShift?: 1 | -1;
+  private pendingTargetGear?: number;
 
   constructor(
     private readonly eventTarget: Pick<Window, 'addEventListener' | 'removeEventListener'> = window,
@@ -15,12 +17,19 @@ export class KeyboardController {
   }
 
   getInput(): ControlInput {
+    const gearShift = this.pendingGearShift;
+    const targetGear = this.pendingTargetGear;
+    this.pendingGearShift = undefined;
+    this.pendingTargetGear = undefined;
+
     return {
       steering: Number(this.right) - Number(this.left),
       confidence: 1,
       active: this.left || this.right || this.accelerating || this.braking,
       accelerating: this.accelerating,
       braking: this.braking,
+      gearShift,
+      targetGear,
     };
   }
 
@@ -29,6 +38,19 @@ export class KeyboardController {
     if (event.code === 'ArrowRight' || event.code === 'KeyD') this.right = true;
     if (event.code === 'ArrowUp' || event.code === 'KeyW') this.accelerating = true;
     if (event.code === 'ArrowDown' || event.code === 'KeyS') this.braking = true;
+    if (event.code === 'KeyE' || event.code === 'ShiftLeft' || event.code === 'ShiftRight') {
+      if (!event.repeat) {
+        this.pendingGearShift = 1;
+      }
+    }
+    if (event.code === 'KeyQ') {
+      if (!event.repeat) {
+        this.pendingGearShift = -1;
+      }
+    }
+    if (event.code >= 'Digit1' && event.code <= 'Digit6') {
+      this.pendingTargetGear = Number(event.code.replace('Digit', ''));
+    }
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {

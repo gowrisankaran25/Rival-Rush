@@ -28,6 +28,7 @@ export function scanTraffic(
   playerDistance: number,
   playerLateral: number,
   curveSpeedLimit: number,
+  maxAllowedSpeed: number = GAME.maxSpeed,
 ): TrafficThreat {
   let targetSpeed = curveSpeedLimit;
   let leadDistance = Number.POSITIVE_INFINITY;
@@ -41,7 +42,7 @@ export function scanTraffic(
     leadDistance = gap;
     leadIsIncoming = car.direction === -1;
     if (car.direction === -1 && gap < 95) {
-      targetSpeed = Math.min(targetSpeed, GAME.maxSpeed * clamp((gap - 13) / 55, 0, 1));
+      targetSpeed = Math.min(targetSpeed, maxAllowedSpeed * clamp((gap - 13) / 55, 0, 1));
     } else if (car.direction === 1 && gap < 58) {
       targetSpeed = Math.min(targetSpeed, car.speed * clamp((gap - 7) / 28, 0, 1));
     }
@@ -56,6 +57,8 @@ export function createSpeedPlan(
   currentSpeed: number,
   curveSpeedLimit: number,
   threat: TrafficThreat,
+  maxAllowedSpeed: number = GAME.maxSpeed,
+  accelMultiplier: number = 1.0,
 ): SpeedPlan {
   let { targetSpeed } = threat;
   const { leadDistance, leadIsIncoming } = threat;
@@ -78,11 +81,11 @@ export function createSpeedPlan(
     if (brakePressure > 0) {
       if (currentSpeed < 1.0 && !control.accelerating) {
         // Reverse
-        targetSpeed = -GAME.maxSpeed * brakePressure * 0.4;
-        acceleration = GAME.acceleration;
+        targetSpeed = -maxAllowedSpeed * brakePressure * 0.4;
+        acceleration = GAME.acceleration * accelMultiplier;
         safetyBraking = false;
       } else {
-        const brakeSpeedCap = GAME.maxSpeed * (1 - brakePressure);
+        const brakeSpeedCap = maxAllowedSpeed * (1 - brakePressure);
         targetSpeed = Math.min(targetSpeed, currentSpeed, brakeSpeedCap);
         acceleration = isEmergency(leadDistance, leadIsIncoming)
           ? GAME.emergencyBrake
@@ -94,16 +97,18 @@ export function createSpeedPlan(
         targetSpeed = 0;
         acceleration = GAME.serviceBrake;
       } else {
-        acceleration = GAME.acceleration;
+        targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
+        acceleration = GAME.acceleration * accelMultiplier;
       }
     } else {
       targetSpeed = 0;
       acceleration = GAME.coastDeceleration;
     }
   } else {
+    targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
     acceleration =
       targetSpeed > currentSpeed
-        ? GAME.acceleration
+        ? GAME.acceleration * accelMultiplier
         : isEmergency(leadDistance, leadIsIncoming)
           ? GAME.emergencyBrake
           : GAME.serviceBrake;

@@ -42,6 +42,8 @@ export class DrivingApplication {
   private readonly pauseButton = byId<HTMLButtonElement>('pause-button');
   private readonly mainMenuButton = byId<HTMLButtonElement>('main-menu-button');
   private readonly fullscreenButton = byId<HTMLButtonElement>('fullscreen-button');
+  private readonly cameraButton = byId<HTMLButtonElement>('camera-button');
+  private readonly weatherButton = byId<HTMLButtonElement>('weather-button');
 
   private game: DrivingGame | null = null;
   private handController: HandController | null = null;
@@ -50,6 +52,7 @@ export class DrivingApplication {
   private soundEnabled = this.audio.getEnabled();
   private driverCar: CarModelId = DEFAULT_CAR_MODEL_ID;
   private driverColor = 0xf5f7f4;
+  private selectedCameraMode = 0;
   private trafficCount = 4;
   private modelCount = 1;
   private assetsReady: Promise<boolean> = Promise.resolve(false);
@@ -163,6 +166,18 @@ export class DrivingApplication {
       },
       options,
     );
+    byId<HTMLSelectElement>('camera-select').addEventListener(
+      'change',
+      (event) => {
+        const mode = Number((event.currentTarget as HTMLSelectElement).value);
+        this.selectedCameraMode = mode;
+        if (this.game) {
+          const modeName = this.game.setCameraMode(mode);
+          this.updateCameraButton(modeName);
+        }
+      },
+      options,
+    );
     byId<HTMLButtonElement>('camera-start').addEventListener(
       'click',
       (event) => {
@@ -175,6 +190,40 @@ export class DrivingApplication {
     this.pauseButton.addEventListener('click', () => this.togglePause(), options);
     byId('hide-camera').addEventListener('click', () => this.setCameraVisible(false), options);
     byId('show-camera').addEventListener('click', () => this.setCameraVisible(true), options);
+    this.cameraButton.addEventListener(
+      'click',
+      () => {
+        if (this.game) {
+          const mode = this.game.toggleCameraAngle();
+          this.updateCameraButton(mode);
+        }
+      },
+      options,
+    );
+    this.weatherButton.addEventListener(
+      'click',
+      () => {
+        if (this.game) {
+          const mode = this.game.cycleWeather();
+          this.updateWeatherButton(mode);
+        }
+      },
+      options,
+    );
+    byId('gear-up-btn').addEventListener(
+      'click',
+      () => {
+        this.game?.shiftGear(1);
+      },
+      options,
+    );
+    byId('gear-down-btn').addEventListener(
+      'click',
+      () => {
+        this.game?.shiftGear(-1);
+      },
+      options,
+    );
     byId<HTMLButtonElement>('mute-button').addEventListener(
       'click',
       (event) => {
@@ -239,12 +288,27 @@ export class DrivingApplication {
       (snapshot) => {
         this.lastSnapshot = snapshot;
         this.hud.update(snapshot, this.getControl().steering);
-        this.audio.update(snapshot.speedKph);
+        this.audio.update(
+          snapshot.speedKph,
+          snapshot.weatherType ?? 'clear',
+          snapshot.rainIntensity ?? 0,
+          snapshot.snowIntensity ?? 0,
+        );
+        if (snapshot.weatherMode) {
+          this.updateWeatherButton(snapshot.weatherMode);
+        }
+        if (snapshot.cameraModeName) {
+          this.updateCameraButton(snapshot.cameraModeName);
+        }
       },
       () => this.showCrash(),
       () => this.audio.hornThreeTimes(),
       (snapshot) => this.performanceHud.update(snapshot),
+      (gear, direction) => this.audio.playGearShift(gear, direction),
     );
+    if (this.selectedCameraMode !== 0) {
+      game.setCameraMode(this.selectedCameraMode);
+    }
     game.setPerformanceMonitoring(this.performanceHud.isVisible());
     game.setGraphicsQuality(this.graphicsSettings.getMode());
     return game;
@@ -522,7 +586,14 @@ export class DrivingApplication {
     }
     if (event.code === 'KeyC') {
       event.preventDefault();
-      this.game?.toggleCameraAngle();
+      const mode = this.game?.toggleCameraAngle();
+      this.updateCameraButton(mode);
+      return;
+    }
+    if (event.code === 'KeyV') {
+      event.preventDefault();
+      const mode = this.game?.cycleWeather();
+      this.updateWeatherButton(mode);
       return;
     }
     if (event.code !== 'Escape') return;
@@ -586,6 +657,34 @@ export class DrivingApplication {
       subtitle.textContent = active
         ? 'ATMOSPHERIC MENU THEME • ENGINE PREVIEWS ACTIVE'
         : 'CLICK TO PLAY REALISTIC MENU SOUNDTRACK';
+    }
+  }
+
+  private updateWeatherButton(mode?: string): void {
+    if (!mode) return;
+    const label = this.weatherButton.querySelector('.weather-button-label');
+    if (label) {
+      label.textContent = `WEATHER: ${mode.toUpperCase()}`;
+    }
+    const compactLabel = this.weatherButton.querySelector('.weather-button-label-compact');
+    if (compactLabel) {
+      compactLabel.textContent = mode.slice(0, 3).toUpperCase();
+    }
+  }
+
+  private updateCameraButton(modeName?: string): void {
+    if (!modeName) return;
+    const label = this.cameraButton.querySelector('.camera-button-label');
+    if (label) {
+      label.textContent = `CAM: ${modeName.toUpperCase()}`;
+    }
+    const compactLabel = this.cameraButton.querySelector('.camera-button-label-compact');
+    if (compactLabel) {
+      compactLabel.textContent = 'CAM';
+    }
+    const select = document.getElementById('camera-select') as HTMLSelectElement | null;
+    if (select && this.game) {
+      select.value = String(this.game.getCameraMode());
     }
   }
 }

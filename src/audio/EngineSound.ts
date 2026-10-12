@@ -30,6 +30,9 @@ export class EngineSound {
   private engineVolume = 1.0;
   private musicVolume = 1.0;
   private carModelId: string = 'ford-f150-raptor';
+  private rainGain: GainNode | null = null;
+  private stormGain: GainNode | null = null;
+  private noiseSource: AudioBufferSourceNode | null = null;
 
   constructor() {
     this.loadSettings();
@@ -133,6 +136,42 @@ export class EngineSound {
     this.musicGain.connect(this.masterGain);
     this.oscillator.start();
 
+    // Procedural weather audio graph (rain patter and storm rumble)
+    try {
+      this.rainGain = this.context.createGain();
+      this.rainGain.gain.value = 0.0001;
+      this.stormGain = this.context.createGain();
+      this.stormGain.gain.value = 0.0001;
+
+      const bufferSize = Math.floor(this.context.sampleRate * 2);
+      const noiseBuffer = this.context.createBuffer(1, bufferSize, this.context.sampleRate);
+      const output = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+
+      this.noiseSource = this.context.createBufferSource();
+      this.noiseSource.buffer = noiseBuffer;
+      this.noiseSource.loop = true;
+
+      // Bandpass filter for rushing rain hiss / windshield patter
+      const rainFilter = this.context.createBiquadFilter();
+      rainFilter.type = 'bandpass';
+      rainFilter.frequency.value = 1750;
+      rainFilter.Q.value = 1.2;
+
+      // Lowpass filter for deep storm rumble / winter wind
+      const stormFilter = this.context.createBiquadFilter();
+      stormFilter.type = 'lowpass';
+      stormFilter.frequency.value = 180;
+
+      this.noiseSource.connect(rainFilter).connect(this.rainGain).connect(this.masterGain);
+      this.noiseSource.connect(stormFilter).connect(this.stormGain).connect(this.masterGain);
+      this.noiseSource.start();
+    } catch {
+      // Audio buffer creation safe fallback
+    }
+
     if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
     this.musicTimer = window.setInterval(() => this.scheduleBeat(), 240);
   }
@@ -167,8 +206,32 @@ export class EngineSound {
     return this.menuMusicActive;
   }
 
-  update(speedKph: number): void {
-    if (!this.context || !this.oscillator || !this.gain) return;
+  update(
+    speedKph: number,
+    _weatherType: 'clear' | 'rain' | 'snow' = 'clear',
+    rainIntensity = 0,
+    snowIntensity = 0,
+  ): void {
+    if (!this.context) return;
+
+    // Update weather audio
+    if (this.rainGain) {
+      const rainVol =
+        this.enabled && this.playing && rainIntensity > 0.01
+          ? rainIntensity * (0.045 + Math.min(speedKph, 140) * 0.0003) * this.masterVolume
+          : 0.0001;
+      this.rainGain.gain.setTargetAtTime(rainVol, this.context.currentTime, 0.12);
+    }
+
+    if (this.stormGain) {
+      const stormVol =
+        this.enabled && this.playing
+          ? (rainIntensity * 0.035 + snowIntensity * 0.02) * this.masterVolume
+          : 0.0001;
+      this.stormGain.gain.setTargetAtTime(stormVol, this.context.currentTime, 0.12);
+    }
+
+    if (!this.oscillator || !this.gain) return;
     if (this.mode !== 'racing' || !this.playing) return;
 
     let baseFreq = 48;
@@ -230,6 +293,12 @@ export class EngineSound {
     } else {
       if (this.gain && this.context) {
         this.gain.gain.setTargetAtTime(0.001, this.context.currentTime, 0.08);
+      }
+      if (this.rainGain && this.context) {
+        this.rainGain.gain.setTargetAtTime(0.0001, this.context.currentTime, 0.08);
+      }
+      if (this.stormGain && this.context) {
+        this.stormGain.gain.setTargetAtTime(0.0001, this.context.currentTime, 0.08);
       }
     }
   }
@@ -302,6 +371,35 @@ export class EngineSound {
     const start = this.context.currentTime + 0.025;
     for (let index = 0; index < 3; index += 1) {
       this.playHornPulse(start + index * 0.34);
+    }
+  }
+
+  /**
+   * Plays a distinct mechanical gear shift click, throttle blip, and exhaust pop
+   * when shifting gears to increase speed or downshifting.
+   */
+  playGearShift(gear: number, direction: 1 | -1): void {
+    if (!this.context || !this.playing || !this.enabled) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+    const engVol = this.engineVolume * 0.25;
+
+    // Shift click impulse
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(direction > 0 ? 320 + gear * 45 : 240, now);
+    osc.frequency.exponentialRampToValueAtTime(direction > 0 ? 580 + gear * 60 : 160, now + 0.06);
+    gain.gain.setValueAtTime(0.18 * engVol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    osc.connect(gain);
+    gain.connect(this.masterGain ?? this.context.destination);
+    osc.start(now);
+    osc.stop(now + 0.09);
+
+    // Exhaust pop on upshift
+    if (direction > 0) {
+      this.synthExhaustPop(now + 0.04, engVol * 0.7);
     }
   }
 

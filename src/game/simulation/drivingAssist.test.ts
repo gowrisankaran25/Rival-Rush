@@ -91,4 +91,24 @@ describe('driving assistance', () => {
 
     expect(plan.targetSpeed).toBe(10);
   });
+
+  it('allows higher top speed and acceleration when in higher gear', () => {
+    const higherGearMaxSpeed = 72; // Gear 6 top speed (~260 km/h)
+    const accelBoost = 1.6;
+    const plan = createSpeedPlan(
+      { steering: 0, confidence: 1, active: true },
+      30,
+      higherGearMaxSpeed,
+      {
+        targetSpeed: higherGearMaxSpeed,
+        leadDistance: Infinity,
+        leadIsIncoming: false,
+      },
+      higherGearMaxSpeed,
+      accelBoost,
+    );
+
+    expect(plan.targetSpeed).toBe(higherGearMaxSpeed);
+    expect(plan.acceleration).toBe(GAME.acceleration * accelBoost);
+  });
 });

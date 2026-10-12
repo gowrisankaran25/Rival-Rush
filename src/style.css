@@ -84,80 +84,11 @@ button {
   overflow: hidden;
 }
 
-/* A-pillars — the dark structural frame of the windshield */
-.cockpit-pillar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: clamp(32px, 4.5vw, 70px);
-  background: linear-gradient(
-    to right,
-    rgba(2, 3, 5, 0.92),
-    rgba(5, 8, 12, 0.7) 45%,
-    rgba(8, 12, 18, 0.3) 75%,
-    transparent
-  );
-  z-index: 2;
-}
-.cockpit-pillar-left {
-  left: 0;
-}
-.cockpit-pillar-right {
-  right: 0;
-  transform: scaleX(-1);
-}
-
-/* Windshield top edge — the roof overhang */
+/* Interior geometry & dashboard hidden for clean front-facing road driving view */
+.cockpit-pillar,
+.cockpit-dashboard,
 .cockpit-windshield-top {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: clamp(28px, 4vh, 55px);
-  background: linear-gradient(
-    180deg,
-    rgba(2, 4, 6, 0.88) 0%,
-    rgba(5, 8, 12, 0.6) 40%,
-    rgba(8, 12, 18, 0.25) 70%,
-    transparent 100%
-  );
-  z-index: 1;
-}
-
-/* Dashboard silhouette at the bottom */
-.cockpit-dashboard {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: clamp(55px, 9vh, 105px);
-  background: linear-gradient(
-    0deg,
-    rgba(3, 5, 8, 0.95) 0%,
-    rgba(5, 8, 12, 0.8) 25%,
-    rgba(8, 12, 18, 0.5) 50%,
-    rgba(12, 18, 25, 0.2) 75%,
-    transparent 100%
-  );
-  z-index: 1;
-  /* Subtle curved dashboard shape */
-  border-radius: 60% 60% 0 0 / 18% 18% 0 0;
-}
-.cockpit-dashboard::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 5%;
-  right: 5%;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(255, 255, 255, 0.06) 20%,
-    rgba(255, 255, 255, 0.1) 50%,
-    rgba(255, 255, 255, 0.06) 80%,
-    transparent
-  );
+  display: none !important;
 }
 
 /* Glass reflection — a subtle light streak that shifts with steering */
@@ -237,6 +168,24 @@ button {
     radial-gradient(circle 1px at 92% 62%, rgba(255, 255, 255, 0.1) 0%, transparent 100%),
     radial-gradient(circle 1px at 38% 85%, rgba(255, 255, 255, 0.06) 0%, transparent 100%),
     radial-gradient(circle 1.5px at 72% 92%, rgba(255, 255, 255, 0.12) 0%, transparent 100%);
+}
+
+/* Winter frost on glass corners during snow storms */
+.cockpit-frost {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse 82% 72% at 50% 50%,
+    transparent 52%,
+    rgba(215, 235, 255, 0.14) 72%,
+    rgba(235, 245, 255, 0.45) 88%,
+    rgba(255, 255, 255, 0.82) 100%
+  );
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+  mix-blend-mode: screen;
 }
 
 /* Windshield edge highlight — thin luminous border at the glass edge */
@@ -350,8 +299,32 @@ button {
   color: var(--acid);
   background: rgba(8, 12, 17, 0.86);
 }
-.graphics-button-label-compact {
+.camera-button-label-compact,
+.graphics-button-label-compact,
+.weather-button-label-compact {
   display: none;
+}
+
+@media (max-width: 720px) {
+  .camera-button-label,
+  .graphics-button-label,
+  .weather-button-label {
+    display: none;
+  }
+  .camera-button-label-compact,
+  .graphics-button-label-compact,
+  .weather-button-label-compact {
+    display: inline;
+  }
+}
+
+.windshield-weather-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
 }
 
 .graphics-settings {
@@ -1526,6 +1499,81 @@ h2 {
   box-shadow: 0 0 12px rgba(233, 255, 66, 0.65);
   transition: width 0.15s linear;
 }
+.gear-panel {
+  position: absolute;
+  left: 238px;
+  bottom: 30px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  background: rgba(8, 14, 20, 0.82);
+  border: 1px solid rgba(233, 255, 66, 0.4);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.5);
+  transform: skewX(-12deg);
+  pointer-events: auto;
+  user-select: none;
+  backdrop-filter: blur(8px);
+}
+.gear-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+.gear-badge small {
+  font:
+    700 8px 'DM Mono',
+    monospace;
+  color: rgba(255, 255, 255, 0.65);
+  letter-spacing: 0.12em;
+}
+.gear-badge strong {
+  font-size: 32px;
+  font-weight: 900;
+  font-style: italic;
+  color: var(--acid);
+  text-shadow: 0 0 12px rgba(233, 255, 66, 0.65);
+  min-width: 22px;
+  text-align: center;
+}
+.gear-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.gear-controls span {
+  font:
+    700 11px 'DM Mono',
+    monospace;
+  color: #fff;
+  letter-spacing: 0.08em;
+  min-width: 32px;
+  text-align: center;
+}
+.gear-btn {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.gear-btn:hover {
+  background: var(--acid);
+  color: #050c10;
+  border-color: var(--acid);
+  box-shadow: 0 0 10px rgba(233, 255, 66, 0.7);
+}
+.gear-btn:active {
+  transform: scale(0.92);
+}
 .run-stats {
   position: absolute;
   top: 88px;
@@ -1924,6 +1972,12 @@ h2 {
     left: 17px;
     bottom: 21px;
     width: 130px;
+  }
+  .gear-panel {
+    left: 152px;
+    bottom: 18px;
+    padding: 3px 8px;
+    transform: skewX(-10deg) scale(0.88);
   }
   .speed-number > span {
     font-size: 47px;
