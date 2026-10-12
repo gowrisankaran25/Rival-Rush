@@ -32,6 +32,7 @@ export function steeringFromHands(
   right: { x: number; y: number },
   neutralAngle: number,
   deadZone = 0.045,
+  curvePower = 1.0,
 ): number {
   // Reach full steering with a comfortable hand rotation while preserving a
   // small neutral zone that filters camera-tracking jitter.
@@ -40,7 +41,32 @@ export function steeringFromHands(
   let delta = Math.atan2(Math.sin(angle - neutralAngle), Math.cos(angle - neutralAngle));
   if (Math.abs(delta) <= deadZone) return 0;
   delta -= Math.sign(delta) * deadZone;
-  return clamp(delta / steeringRange, -1, 1);
+  const normalized = clamp(delta / steeringRange, -1, 1);
+  if (curvePower === 1.0) return normalized;
+  return Math.sign(normalized) * Math.pow(Math.abs(normalized), curvePower);
+}
+
+/**
+ * Applies a progressive non-linear response curve to steering input.
+ * Softens micro-tremors near center while preserving full turning authority.
+ */
+export function progressiveSteering(rawSteering: number, power = 1.45): number {
+  const clamped = clamp(rawSteering, -1, 1);
+  return Math.sign(clamped) * Math.pow(Math.abs(clamped), power);
+}
+
+/**
+ * Applies speed-sensitive steering damping.
+ * High speeds stabilize heading rate to prevent twitchy lane veering,
+ * while lower speeds retain full turning agility.
+ */
+export function speedSensitiveSteering(
+  steering: number,
+  speedMs: number,
+  baseAuthority = 0.95,
+): number {
+  const speedScale = 1 / (1 + Math.max(0, speedMs - 8) * 0.022);
+  return steering * baseAuthority * speedScale;
 }
 
 export function curveSpeedLimit(distance: number, maxSpeed: number, minSpeed: number): number {

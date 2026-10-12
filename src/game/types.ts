@@ -41,6 +41,21 @@ export interface RadarTelemetry {
     severity: 'gentle' | 'sharp' | 'hairpin';
     distanceMeters: number;
   };
+  roadCondition?: RoadCondition;
+}
+
+export type WeatherType = 'clear' | 'fog' | 'rain' | 'storm' | 'snow';
+export type WeatherMode = 'auto' | 'clear' | 'fog' | 'rain' | 'storm' | 'snow';
+
+export interface RoadCondition {
+  surface: 'dry' | 'damp' | 'wet' | 'flooded' | 'icy';
+  grip: number;
+  brakingFactor: number;
+  curveSpeedFactor: number;
+  hydroplaneRisk: number;
+  tireSlip: number;
+  label: string;
+  statusType: 'optimal' | 'warning' | 'danger';
 }
 
 export interface GameSnapshot {
@@ -51,14 +66,17 @@ export interface GameSnapshot {
   phase: GamePhase;
   assistMessage: string;
   health: number;
-  weatherType?: 'clear' | 'rain' | 'snow';
+  weatherType?: WeatherType;
   rainIntensity?: number;
   snowIntensity?: number;
-  weatherMode?: 'auto' | 'rain' | 'snow' | 'clear';
+  fogIntensity?: number;
+  stormIntensity?: number;
+  weatherMode?: WeatherMode;
   cameraMode?: number;
   cameraModeName?: string;
   currentGear?: number;
   gearLabel?: string;
   gearMaxKph?: number;
   radar?: RadarTelemetry;
+  roadCondition?: RoadCondition;
 }

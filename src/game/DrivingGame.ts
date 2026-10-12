@@ -7,9 +7,11 @@ import {
   constrainToRoad,
   curveSpeedLimit,
   damp,
+  progressiveSteering,
   roadCenter,
   roadCurvature,
   roadHeading,
+  speedSensitiveSteering,
 } from './math';
 import { createRoadStrip, updateRoadStrip } from './roadSurface';
 import { AdaptiveQuality, chooseInitialQuality } from './rendering/AdaptiveQuality';
@@ -63,6 +65,129 @@ interface Interactable {
   laneOffset: number;
   active: boolean;
   rotationY: number;
+}
+
+interface VehicleLightRig {
+  headLenses: THREE.Mesh[];
+  headFlares: THREE.Mesh[];
+  tailLenses: THREE.Mesh[];
+  tailFlares: THREE.Mesh[];
+}
+
+let sharedLightFlareTexture: THREE.CanvasTexture | undefined;
+
+function getLightFlareTexture(): THREE.CanvasTexture {
+  if (sharedLightFlareTexture) return sharedLightFlareTexture;
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const grad = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+    grad.addColorStop(0.25, 'rgba(255, 255, 255, 0.85)');
+    grad.addColorStop(0.6, 'rgba(255, 255, 255, 0.3)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+  }
+  sharedLightFlareTexture = new THREE.CanvasTexture(canvas);
+  return sharedLightFlareTexture;
+}
+
+function createHeadlightBeamTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return new THREE.CanvasTexture(canvas);
+
+  ctx.clearRect(0, 0, 512, 512);
+
+  // Left headlight beam cone
+  const gradLeft = ctx.createRadialGradient(190, 70, 10, 190, 180, 290);
+  gradLeft.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+  gradLeft.addColorStop(0.2, 'rgba(240, 248, 255, 0.80)');
+  gradLeft.addColorStop(0.5, 'rgba(210, 235, 255, 0.40)');
+  gradLeft.addColorStop(0.8, 'rgba(170, 210, 255, 0.14)');
+  gradLeft.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+  ctx.fillStyle = gradLeft;
+  ctx.beginPath();
+  ctx.ellipse(190, 200, 160, 260, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Right headlight beam cone
+  const gradRight = ctx.createRadialGradient(322, 70, 10, 322, 180, 290);
+  gradRight.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+  gradRight.addColorStop(0.2, 'rgba(240, 248, 255, 0.80)');
+  gradRight.addColorStop(0.5, 'rgba(210, 235, 255, 0.40)');
+  gradRight.addColorStop(0.8, 'rgba(170, 210, 255, 0.14)');
+  gradRight.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+  ctx.fillStyle = gradRight;
+  ctx.beginPath();
+  ctx.ellipse(322, 200, 160, 260, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Smooth longitudinal falloff mask
+  ctx.globalCompositeOperation = 'destination-in';
+  const longFade = ctx.createLinearGradient(0, 0, 0, 512);
+  longFade.addColorStop(0, 'rgba(0, 0, 0, 0.05)');
+  longFade.addColorStop(0.08, 'rgba(0, 0, 0, 1.0)');
+  longFade.addColorStop(0.45, 'rgba(0, 0, 0, 0.95)');
+  longFade.addColorStop(0.85, 'rgba(0, 0, 0, 0.35)');
+  longFade.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+  ctx.fillStyle = longFade;
+  ctx.fillRect(0, 0, 512, 512);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.ClampToEdgeWrapping;
+  texture.wrapT = THREE.ClampToEdgeWrapping;
+  return texture;
+}
+
+function createHeadlightRoadBeam(): THREE.Mesh {
+  const nearZ = -3.5;
+  const farZ = -58.0;
+  const nearHalfW = 1.35;
+  const farHalfW = 7.2;
+
+  const positions = new Float32Array([
+    -nearHalfW,
+    0,
+    nearZ,
+    nearHalfW,
+    0,
+    nearZ,
+    farHalfW,
+    0,
+    farZ,
+    -farHalfW,
+    0,
+    farZ,
+  ]);
+  const uvs = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
+  const indices = [0, 1, 2, 0, 2, 3];
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+
+  const texture = createHeadlightBeamTexture();
+  const material = new THREE.MeshBasicMaterial({
+    map: texture,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    opacity: 0.7,
+    side: THREE.DoubleSide,
+  });
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.renderOrder = 2;
+  return mesh;
 }
 
 const GROUND_SIZE = 1200;
@@ -277,10 +402,12 @@ export class DrivingGame {
   private currentGear = 3; // Default 3rd gear (Drive / Highway Cruise)
   private gearShiftCooldown = 0;
   private gearShiftSurge = 0;
+  private tireSlip = 0;
 
   // ── Dynamic Weather ──
   private readonly weatherSystem: WeatherSystem;
   private readonly windshieldOverlay: WindshieldWeatherOverlay;
+  private readonly headlightBeam: THREE.Mesh;
 
   constructor(
     private readonly container: HTMLElement,
@@ -423,6 +550,9 @@ export class DrivingGame {
     this.player.visible = false;
     this.scene.add(this.player);
 
+    this.headlightBeam = createHeadlightRoadBeam();
+    this.scene.add(this.headlightBeam);
+
     // Initialize camera immediately at the driver's-eye road view for frame 0
     this.setupInitialCamera();
 
@@ -526,9 +656,11 @@ export class DrivingGame {
     const nextMode = this.weatherSystem.cycleMode();
     const modeLabels: Record<WeatherMode, string> = {
       auto: 'DYNAMIC AUTO',
-      rain: 'TORRENTIAL RAIN',
-      snow: 'WINTER BLIZZARD',
       clear: 'CLEAR SKIES',
+      fog: 'MOUNTAIN FOG',
+      rain: 'TORRENTIAL RAIN',
+      storm: 'THUNDERSTORM',
+      snow: 'WINTER BLIZZARD',
     };
     this.assistMessage = `WEATHER: ${modeLabels[nextMode]}`;
     return nextMode;
@@ -624,6 +756,7 @@ export class DrivingGame {
       blips,
       roadNodes,
       upcomingTurn,
+      roadCondition: this.weatherSystem.getRoadCondition(playerSpeedKph, this.tireSlip),
     };
   }
 
@@ -662,7 +795,7 @@ export class DrivingGame {
     this.currentGear = 3;
     this.gearShiftCooldown = 0;
     this.gearShiftSurge = 0;
-    this.vehicleAssets.setBrakeLights(this.player, false);
+    this.setVehicleBrake(this.player, false);
     this.setupInitialCamera();
     let ongoingCursor = 45;
     let incomingCursor = 62;
@@ -883,6 +1016,7 @@ export class DrivingGame {
       playerModel.id,
       this.driverColor,
     );
+    this.attachVehicleLightRig(this.player, true);
     const initialCamConfig = CAMERA_CONFIGS[this.cameraMode] ?? CAMERA_CONFIGS[0];
     this.player.visible = initialCamConfig.showCar;
     this.player.traverse((child) => {
@@ -893,8 +1027,105 @@ export class DrivingGame {
     this.traffic.forEach((car, index) => {
       const model = available[(trafficStart + index) % available.length];
       this.vehicleAssets.replaceVisual(car.mesh, model.trafficPrototype, false, model.id);
+      this.attachVehicleLightRig(car.mesh, false);
     });
     this.carModelsApplied = true;
+  }
+
+  private attachVehicleLightRig(carGroup: THREE.Group, _isPlayer: boolean): void {
+    const existing = carGroup.getObjectByName('vehicle-light-rig');
+    if (existing) carGroup.remove(existing);
+
+    const rigGroup = new THREE.Group();
+    rigGroup.name = 'vehicle-light-rig';
+
+    const flareTex = getLightFlareTexture();
+
+    // ── Front Xenon Headlights (shines forward along -Z) ──
+    const headLenses: THREE.Mesh[] = [];
+    const headFlares: THREE.Mesh[] = [];
+    const headLensMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const headFlareMat = new THREE.MeshBasicMaterial({
+      map: flareTex,
+      color: 0xf5f8ff,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      opacity: 0.88,
+    });
+
+    const headLensGeom = new THREE.BoxGeometry(0.18, 0.1, 0.08);
+    const headFlareGeom = new THREE.PlaneGeometry(0.55, 0.55);
+
+    for (const x of [-0.74, 0.74]) {
+      const lens = new THREE.Mesh(headLensGeom, headLensMat);
+      lens.position.set(x, 0.58, -2.18);
+      rigGroup.add(lens);
+      headLenses.push(lens);
+
+      const flare = new THREE.Mesh(headFlareGeom, headFlareMat);
+      flare.position.set(x, 0.58, -2.22);
+      flare.rotation.y = Math.PI;
+      rigGroup.add(flare);
+      headFlares.push(flare);
+    }
+
+    // ── Rear Ruby Taillights (shines rearward along +Z) ──
+    const tailLenses: THREE.Mesh[] = [];
+    const tailFlares: THREE.Mesh[] = [];
+    const tailLensMat = new THREE.MeshBasicMaterial({ color: 0xee1622 });
+    const tailFlareMat = new THREE.MeshBasicMaterial({
+      map: flareTex,
+      color: 0xff1e28,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      opacity: 0.72,
+    });
+
+    const tailLensGeom = new THREE.BoxGeometry(0.2, 0.1, 0.08);
+    const tailFlareGeom = new THREE.PlaneGeometry(0.55, 0.55);
+
+    for (const x of [-0.74, 0.74]) {
+      const lens = new THREE.Mesh(tailLensGeom, tailLensMat);
+      lens.position.set(x, 0.64, 2.18);
+      rigGroup.add(lens);
+      tailLenses.push(lens);
+
+      const flare = new THREE.Mesh(tailFlareGeom, tailFlareMat);
+      flare.position.set(x, 0.64, 2.22);
+      rigGroup.add(flare);
+      tailFlares.push(flare);
+    }
+
+    carGroup.add(rigGroup);
+    carGroup.userData.lightRig = {
+      headLenses,
+      headFlares,
+      tailLenses,
+      tailFlares,
+    };
+  }
+
+  private setVehicleBrake(carMesh: THREE.Group, braking: boolean): void {
+    this.vehicleAssets.setBrakeLights(carMesh, braking);
+    const rig = carMesh.userData.lightRig as VehicleLightRig | undefined;
+    if (rig) {
+      const isBadWeather =
+        this.weatherSystem.getRainIntensity() > 0.08 ||
+        this.weatherSystem.getStormIntensity() > 0.08 ||
+        this.weatherSystem.getFogIntensity() > 0.08;
+      const baseOpacity = isBadWeather ? 0.88 : 0.7;
+      const flareOpacity = braking ? 0.98 : baseOpacity;
+      const flareScale = braking ? 1.35 : 1.0;
+      for (const flare of rig.tailFlares) {
+        (flare.material as THREE.MeshBasicMaterial).opacity = flareOpacity;
+        flare.scale.set(flareScale, flareScale, flareScale);
+      }
+      for (const lens of rig.tailLenses) {
+        (lens.material as THREE.MeshBasicMaterial).color.setHex(braking ? 0xff4455 : 0xee1622);
+      }
+    }
   }
 
   private spawnTraffic(car: TrafficCar, ahead?: number, randomizeDirection = false): void {
@@ -918,7 +1149,7 @@ export class DrivingGame {
     car.speedChangeTimer = 2.5 + Math.random() * 6;
     car.counted = false;
     car.horned = false;
-    this.vehicleAssets.setBrakeLights(car.mesh, false);
+    this.setVehicleBrake(car.mesh, false);
   }
 
   private updateSimulation(dt: number): void {
@@ -957,7 +1188,7 @@ export class DrivingGame {
             if (this.health <= 0) {
               this.phase = 'crashed';
               this.speed = 0;
-              this.vehicleAssets.setBrakeLights(this.player, true);
+              this.setVehicleBrake(this.player, true);
               this.assistMessage = 'CRASHED';
               this.onCrash();
               break;
@@ -1000,6 +1231,9 @@ export class DrivingGame {
       }
     }
 
+    const speedKph = Math.round(this.speed * 3.6);
+    const roadCondition = this.weatherSystem.getRoadCondition(speedKph, this.tireSlip);
+
     const threat = scanTraffic(this.traffic, this.distance, this.lateral, curveLimit, gearMaxSpeed);
     const speedPlan = createSpeedPlan(
       control,
@@ -1008,32 +1242,55 @@ export class DrivingGame {
       threat,
       gearMaxSpeed,
       currentGearSpec.accelMultiplier,
+      roadCondition.grip,
     );
     const { targetSpeed, acceleration, safetyBraking } = speedPlan;
     this.assistMessage = speedPlan.assistMessage;
-    this.vehicleAssets.setBrakeLights(this.player, safetyBraking || control.braking === true);
+    this.setVehicleBrake(this.player, safetyBraking || control.braking === true);
     this.speed = damp(
       this.speed,
       targetSpeed,
       acceleration / Math.max(8, Math.abs(targetSpeed - this.speed)),
       dt,
     );
-    // DEBUG REVERSE
-    if (this.speed < 0 || targetSpeed < 0 || control.braking) {
-      console.log('REVERSE DEBUG:', {
-        speed: this.speed,
-        targetSpeed,
-        accel: acceleration,
-        dt,
-        braking: control.braking,
-      });
-    }
     if (targetSpeed === 0 && Math.abs(this.speed) < 0.3) this.speed = 0;
 
     this.steeringVisual = damp(this.steeringVisual, control.steering, 10, dt);
-    const steeringAuthority = 0.28 + 0.72 * clamp(this.speed / 18, 0, 1);
-    this.vehicleHeading -= this.steeringVisual * 0.82 * steeringAuthority * dt;
-    this.worldX += -Math.sin(this.vehicleHeading) * this.speed * dt;
+
+    // Progressive non-linear steering response curve:
+    // Softens sensitivity near center for effortless lane stabilization, responsive for evasive maneuvers.
+    const progressiveSteer = progressiveSteering(this.steeringVisual, 1.35);
+
+    // Speed-sensitive steering authority & tire grip dynamics:
+    // At low speed, ramp authority progressively for tight turns.
+    // At high cruising and racing speeds (60 - 240 km/h), speed-sensitive damping stabilizes vehicle heading rate.
+    const lowSpeedRamp = clamp(Math.abs(this.speed) / 7.0, 0.25, 1.0);
+    const gripAuthority = 0.55 + 0.45 * roadCondition.grip;
+    let effectiveTurnRate = speedSensitiveSteering(
+      progressiveSteer,
+      Math.abs(this.speed),
+      0.82 * lowSpeedRamp * gripAuthority,
+    );
+
+    // Lateral tire load & slip:
+    const lateralG = Math.abs(progressiveSteer) * (Math.abs(this.speed) / 16);
+    const maxTireGripG = roadCondition.grip * 1.1;
+    const targetSlip = Math.max(0, (lateralG - maxTireGripG) / Math.max(0.15, maxTireGripG));
+    this.tireSlip = damp(this.tireSlip, targetSlip, 5, dt);
+
+    // Hydroplaning or black-ice sliding warnings & authority loss:
+    if (roadCondition.hydroplaneRisk > 0.35) {
+      effectiveTurnRate *= 0.65;
+      this.assistMessage = '⚠️ HYDROPLANING · EASE THROTTLE';
+    } else if (this.tireSlip > 0.22 && roadCondition.surface === 'icy') {
+      this.assistMessage = '❄️ BLACK ICE SLIP · COUNTER-STEER';
+    }
+
+    this.vehicleHeading -= effectiveTurnRate * dt;
+
+    // Lateral drift from tire slip on wet/flooded/icy asphalt:
+    const slipDrift = Math.sign(this.steeringVisual) * this.tireSlip * 1.6 * dt;
+    this.worldX += (-Math.sin(this.vehicleHeading) * this.speed + slipDrift) * dt;
     this.distance += Math.cos(this.vehicleHeading - roadHeading(this.distance)) * this.speed * dt;
 
     const currentRoadHeading = roadHeading(this.distance);
@@ -1064,7 +1321,7 @@ export class DrivingGame {
         }
       }
       this.assistMessage = 'ROAD EDGE';
-      if (edgeProximity > 0.55) this.vehicleAssets.setBrakeLights(this.player, true);
+      if (edgeProximity > 0.55) this.setVehicleBrake(this.player, true);
     }
 
     for (const car of this.traffic) {
@@ -1084,7 +1341,7 @@ export class DrivingGame {
           );
         }
       }
-      this.vehicleAssets.setBrakeLights(car.mesh, trafficTargetSpeed < car.speed - 0.35);
+      this.setVehicleBrake(car.mesh, trafficTargetSpeed < car.speed - 0.35);
       car.speed = damp(car.speed, trafficTargetSpeed, 1.25, dt);
       car.distance += car.speed * car.direction * dt;
       const gap = car.distance - this.distance;
@@ -1103,14 +1360,14 @@ export class DrivingGame {
           if (this.health <= 0) {
             this.phase = 'crashed';
             this.speed = 0;
-            this.vehicleAssets.setBrakeLights(this.player, true);
+            this.setVehicleBrake(this.player, true);
             this.assistMessage = 'CRASHED';
             this.onCrash();
             break;
           } else {
             this.assistMessage = 'DAMAGE TAKEN';
             this.speed *= 0.5;
-            this.vehicleAssets.setBrakeLights(this.player, true);
+            this.setVehicleBrake(this.player, true);
           }
         }
       }
@@ -1138,6 +1395,16 @@ export class DrivingGame {
     this.player.rotation.y = this.vehicleHeading;
     this.player.rotation.z = damp(this.player.rotation.z, -this.steeringVisual * 0.06, 6, dt);
     this.vehicleAssets.updateWheelAnimation(this.player, this.speed * dt, this.steeringVisual, dt);
+
+    this.headlightBeam.position.set(this.worldX, 0.038, -this.distance);
+    this.headlightBeam.rotation.y = this.vehicleHeading;
+    const wetness = this.weatherSystem.getRoadWetness();
+    const isBadWeather =
+      this.weatherSystem.getRainIntensity() > 0.05 ||
+      this.weatherSystem.getStormIntensity() > 0.05 ||
+      this.weatherSystem.getFogIntensity() > 0.05;
+    const beamMat = this.headlightBeam.material as THREE.MeshBasicMaterial;
+    beamMat.opacity = isBadWeather ? 0.72 + wetness * 0.22 : 0.52;
 
     for (const car of this.traffic) {
       const gap = car.distance - this.distance;
@@ -1398,6 +1665,8 @@ export class DrivingGame {
         weatherType: this.weatherSystem.getWeatherType(),
         rainIntensity: this.weatherSystem.getRainIntensity(),
         snowIntensity: this.weatherSystem.getSnowIntensity(),
+        fogIntensity: this.weatherSystem.getFogIntensity(),
+        stormIntensity: this.weatherSystem.getStormIntensity(),
         weatherMode: this.weatherSystem.getMode(),
         cameraMode: this.cameraMode,
         cameraModeName: this.getCameraModeName(),
@@ -1405,6 +1674,7 @@ export class DrivingGame {
         gearLabel: GEAR_SPECS[this.currentGear - 1].label,
         gearMaxKph: GEAR_SPECS[this.currentGear - 1].maxSpeedKph,
         radar: this.getRadarTelemetry(),
+        roadCondition: this.weatherSystem.getRoadCondition(this.speed * 3.6, this.tireSlip),
       });
     }
   };

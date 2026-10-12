@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { damp } from '../math';
+import { damp, lerp } from '../math';
 import type { SceneLighting } from '../sceneAssets';
+import type { RoadCondition, WeatherMode, WeatherType } from '../types';
 
-export type WeatherMode = 'auto' | 'rain' | 'snow' | 'clear';
-export type WeatherType = 'clear' | 'rain' | 'snow';
+export type { WeatherMode, WeatherType } from '../types';
 
 export interface WeatherSystemOptions {
   scene: THREE.Scene;
@@ -11,6 +11,7 @@ export interface WeatherSystemOptions {
   roadMaterial: THREE.MeshStandardMaterial;
   shoulderMaterial: THREE.MeshStandardMaterial;
   groundSnow: THREE.Mesh;
+  onLightningStrike?: () => void;
 }
 
 const RAIN_COUNT = 2400;
@@ -88,9 +89,14 @@ export class WeatherSystem {
   private previousWeatherType: WeatherType = 'clear';
   private rainIntensity = 0;
   private snowIntensity = 0;
+  private fogIntensity = 0;
+  private stormIntensity = 0;
   private wetness = 0;
   private snowAccumulation = 0;
   private elapsedTime = 0;
+  private lightningTimer = 12;
+  private lightningFlash = 0;
+  private readonly onLightningStrike?: () => void;
 
   // Scene references
   private readonly scene: THREE.Scene;
@@ -120,19 +126,27 @@ export class WeatherSystem {
 
   // Sky and fog colors for lerping
   private readonly clearSkyColor = new THREE.Color(0x9bb8bd);
-  private readonly rainSkyColor = new THREE.Color(0x38444c);
+  private readonly fogSkyColor = new THREE.Color(0xb0c0ca);
+  private readonly rainSkyColor = new THREE.Color(0x8ea2b0);
+  private readonly stormSkyColor = new THREE.Color(0x485866);
   private readonly snowSkyColor = new THREE.Color(0xd2dce6);
 
   private readonly clearSunColor = new THREE.Color(0xfff1ce);
-  private readonly rainSunColor = new THREE.Color(0x8a9ba8);
+  private readonly fogSunColor = new THREE.Color(0xc4d4de);
+  private readonly rainSunColor = new THREE.Color(0xe0ecf4);
+  private readonly stormSunColor = new THREE.Color(0x9cb2c4);
   private readonly snowSunColor = new THREE.Color(0xdce6f0);
 
   private readonly clearHemiSky = new THREE.Color(0xdaf7ff);
-  private readonly rainHemiSky = new THREE.Color(0x526575);
+  private readonly fogHemiSky = new THREE.Color(0xa2b6c4);
+  private readonly rainHemiSky = new THREE.Color(0xa4b8c7);
+  private readonly stormHemiSky = new THREE.Color(0x627788);
   private readonly snowHemiSky = new THREE.Color(0xdce6f0);
 
   private readonly clearHemiGround = new THREE.Color(0x31442c);
-  private readonly rainHemiGround = new THREE.Color(0x1e2621);
+  private readonly fogHemiGround = new THREE.Color(0x2c3b31);
+  private readonly rainHemiGround = new THREE.Color(0x566773);
+  private readonly stormHemiGround = new THREE.Color(0x36444e);
   private readonly snowHemiGround = new THREE.Color(0x6b7b85);
 
   private readonly workingColor = new THREE.Color();
@@ -143,6 +157,7 @@ export class WeatherSystem {
     this.roadMaterial = options.roadMaterial;
     this.shoulderMaterial = options.shoulderMaterial;
     this.groundSnow = options.groundSnow;
+    this.onLightningStrike = options.onLightningStrike;
 
     // Start ground snow at 0 opacity (fades in only during snow)
     const groundSnowMat = this.groundSnow.material as THREE.MeshStandardMaterial;
@@ -162,7 +177,7 @@ export class WeatherSystem {
   }
 
   cycleMode(): WeatherMode {
-    const modes: WeatherMode[] = ['auto', 'rain', 'snow', 'clear'];
+    const modes: WeatherMode[] = ['auto', 'rain', 'storm', 'snow', 'fog', 'clear'];
     const currentIndex = modes.indexOf(this.mode);
     const nextIndex = (currentIndex + 1) % modes.length;
     this.mode = modes[nextIndex];
@@ -178,7 +193,9 @@ export class WeatherSystem {
       this.previousWeatherType = this.currentWeatherType;
       const climateLabels: Record<WeatherType, string> = {
         clear: 'CLIMATE: CRISP SUNNY SKIES',
+        fog: 'CLIMATE: ALPINE MOUNTAIN FOG',
         rain: 'CLIMATE: TORRENTIAL RAINSTORM',
+        storm: 'CLIMATE: THUNDERSTORM & TEMPEST',
         snow: 'CLIMATE: ALPINE BLIZZARD',
       };
       return climateLabels[this.currentWeatherType];
@@ -194,8 +211,119 @@ export class WeatherSystem {
     return this.snowIntensity;
   }
 
+  getFogIntensity(): number {
+    return this.fogIntensity;
+  }
+
+  getStormIntensity(): number {
+    return this.stormIntensity;
+  }
+
   getRoadWetness(): number {
     return this.wetness;
+  }
+
+  getSnowAccumulation(): number {
+    return this.snowAccumulation;
+  }
+
+  getRoadCondition(speedKph: number, tireSlip = 0): RoadCondition {
+    if (this.snowAccumulation > 0.18 || this.currentWeatherType === 'snow') {
+      const snow = Math.min(1.0, Math.max(this.snowAccumulation, this.snowIntensity));
+      const grip = lerp(1.0, 0.46, snow);
+      const brakingFactor = lerp(1.0, 2.3, snow);
+      const curveSpeedFactor = lerp(1.0, 0.5, snow);
+      const statusType: 'optimal' | 'warning' | 'danger' =
+        snow > 0.35 || tireSlip > 0.18 ? 'danger' : 'warning';
+      const label =
+        tireSlip > 0.18 ? 'ROAD: BLACK ICE · ❄️ DRIFT SLIPPING' : 'ROAD: ICY SLUSH · ❄️ 46% GRIP';
+      return {
+        surface: 'icy',
+        grip,
+        brakingFactor,
+        curveSpeedFactor,
+        hydroplaneRisk: 0,
+        tireSlip,
+        label,
+        statusType,
+      };
+    }
+
+    if (this.currentWeatherType === 'storm' || this.stormIntensity > 0.35) {
+      const storm = Math.min(1.0, Math.max(this.stormIntensity, this.wetness));
+      const grip = lerp(1.0, 0.58, storm);
+      const brakingFactor = lerp(1.0, 1.85, storm);
+      const curveSpeedFactor = lerp(1.0, 0.62, storm);
+      const hydroplaneRisk = speedKph > 110 ? Math.min(1.0, ((speedKph - 110) / 45) * storm) : 0;
+      const statusType: 'optimal' | 'warning' | 'danger' =
+        hydroplaneRisk > 0.28 || tireSlip > 0.2 ? 'danger' : 'warning';
+      const label =
+        hydroplaneRisk > 0.28
+          ? 'ROAD: FLOODED · ⚠️ HYDROPLANE RISK'
+          : `ROAD: FLOODED · ⚠️ ${Math.round(grip * 100)}% GRIP`;
+      return {
+        surface: 'flooded',
+        grip,
+        brakingFactor,
+        curveSpeedFactor,
+        hydroplaneRisk,
+        tireSlip,
+        label,
+        statusType,
+      };
+    }
+
+    if (this.wetness > 0.18 || this.currentWeatherType === 'rain') {
+      const wet = Math.min(1.0, Math.max(this.wetness, this.rainIntensity));
+      const grip = lerp(1.0, 0.72, wet);
+      const brakingFactor = lerp(1.0, 1.45, wet);
+      const curveSpeedFactor = lerp(1.0, 0.76, wet);
+      const hydroplaneRisk = speedKph > 135 ? Math.min(1.0, ((speedKph - 135) / 60) * wet) : 0;
+      const statusType: 'optimal' | 'warning' | 'danger' =
+        hydroplaneRisk > 0.35 || tireSlip > 0.2 ? 'danger' : 'warning';
+      const label =
+        hydroplaneRisk > 0.35
+          ? 'ROAD: WET · ⚠️ HYDROPLANE RISK'
+          : `ROAD: WET · ⚠️ ${Math.round(grip * 100)}% GRIP`;
+      return {
+        surface: 'wet',
+        grip,
+        brakingFactor,
+        curveSpeedFactor,
+        hydroplaneRisk,
+        tireSlip,
+        label,
+        statusType,
+      };
+    }
+
+    if (this.fogIntensity > 0.2 || this.currentWeatherType === 'fog') {
+      const fog = Math.min(1.0, this.fogIntensity);
+      const grip = lerp(1.0, 0.85, fog);
+      const brakingFactor = lerp(1.0, 1.22, fog);
+      const curveSpeedFactor = lerp(1.0, 0.88, fog);
+      return {
+        surface: 'damp',
+        grip,
+        brakingFactor,
+        curveSpeedFactor,
+        hydroplaneRisk: 0,
+        tireSlip,
+        label: `ROAD: DAMP FOG · 🌫️ ${Math.round(grip * 100)}% GRIP`,
+        statusType: 'warning',
+      };
+    }
+
+    return {
+      surface: 'dry',
+      grip: 1.0,
+      brakingFactor: 1.0,
+      curveSpeedFactor: 1.0,
+      hydroplaneRisk: 0,
+      tireSlip,
+      label: 'ROAD: DRY · ☀️ 100% GRIP',
+      statusType: 'optimal',
+    };
   }
 
   private initRain(): void {
@@ -344,43 +472,63 @@ export class WeatherSystem {
     // 1. Determine target weather condition
     let targetRain = 0;
     let targetSnow = 0;
+    let targetFog = 0;
+    let targetStorm = 0;
 
     if (this.mode === 'rain') {
       targetRain = 1.0;
-      targetSnow = 0.0;
+    } else if (this.mode === 'storm') {
+      targetStorm = 1.0;
+      targetRain = 1.0;
     } else if (this.mode === 'snow') {
-      targetRain = 0.0;
       targetSnow = 1.0;
+    } else if (this.mode === 'fog') {
+      targetFog = 1.0;
     } else if (this.mode === 'clear') {
       targetRain = 0.0;
       targetSnow = 0.0;
+      targetFog = 0.0;
+      targetStorm = 0.0;
     } else {
-      // Dynamic automatic climate: smoothly transitions continuously over time (~75s cycle),
+      // Dynamic automatic climate: smoothly transitions continuously over time (~100s cycle),
       // with a distance boost so high-speed driving travels through regional climate zones faster.
-      const CYCLE_DURATION = 75; // seconds for complete 4-season climate cycle
+      const CYCLE_DURATION = 100;
       const progress = ((this.elapsedTime + distance * 0.015) % CYCLE_DURATION) / CYCLE_DURATION;
 
-      // 0.00 - 0.22 (0s - 16.5s): Clear Crisp Sunshine
-      // 0.22 - 0.52 (16.5s - 39s): Automatic Torrential Rainstorm (Peaks ~0.37)
-      // 0.52 - 0.68 (39s - 51s): Rain Clearing & Atmospheric Mist Drying
-      // 0.68 - 0.96 (51s - 72s): Alpine Blizzard & Snowfall (Peaks ~0.82)
-      // 0.96 - 1.00 (72s - 75s): Return to Clear Sunshine
-      if (progress >= 0.22 && progress <= 0.52) {
-        const t = (progress - 0.22) / 0.3;
+      // 0.00 - 0.20 (0s - 20s): Clear Crisp Sunshine (Dry road)
+      // 0.20 - 0.44 (20s - 44s): Torrential Rainstorm (Wet asphalt, tire spray)
+      // 0.44 - 0.62 (44s - 62s): Heavy Thunderstorm & Tempest (Flooded road, lightning, hydroplane)
+      // 0.62 - 0.82 (62s - 82s): Alpine Blizzard & Snowfall (Black ice, drifting)
+      // 0.82 - 0.96 (82s - 96s): Mountain Fog & Misty Morning (Damp road)
+      // 0.96 - 1.00 (96s - 100s): Gentle clearing return to Sunshine
+      if (progress >= 0.2 && progress < 0.44) {
+        const t = (progress - 0.2) / 0.24;
         targetRain = Math.sin(t * Math.PI);
-      } else if (progress >= 0.68 && progress <= 0.96) {
-        const t = (progress - 0.68) / 0.28;
+      } else if (progress >= 0.44 && progress < 0.62) {
+        const t = (progress - 0.44) / 0.18;
+        targetStorm = Math.sin(t * Math.PI);
+        targetRain = 0.6 + 0.4 * Math.sin(t * Math.PI);
+      } else if (progress >= 0.62 && progress < 0.82) {
+        const t = (progress - 0.62) / 0.2;
         targetSnow = Math.sin(t * Math.PI);
+      } else if (progress >= 0.82 && progress < 0.96) {
+        const t = (progress - 0.82) / 0.14;
+        targetFog = Math.sin(t * Math.PI);
       }
     }
 
     // Smoothly transition intensities
     this.rainIntensity = damp(this.rainIntensity, targetRain, 1.4, dt);
     this.snowIntensity = damp(this.snowIntensity, targetSnow, 1.2, dt);
+    this.fogIntensity = damp(this.fogIntensity, targetFog, 1.3, dt);
+    this.stormIntensity = damp(this.stormIntensity, targetStorm, 1.3, dt);
 
-    // Road wetness accumulates with rain and slowly evaporates
-    if (this.rainIntensity > 0.05) {
-      this.wetness = damp(this.wetness, Math.min(1.0, this.rainIntensity * 1.2), 1.0, dt);
+    // Road wetness accumulates with rain and storms and slowly evaporates
+    if (this.rainIntensity > 0.05 || this.stormIntensity > 0.05) {
+      const targetWetness = Math.min(1.0, this.rainIntensity * 1.1 + this.stormIntensity * 1.35);
+      this.wetness = damp(this.wetness, targetWetness, 1.0, dt);
+    } else if (this.fogIntensity > 0.15) {
+      this.wetness = damp(this.wetness, this.fogIntensity * 0.35, 0.4, dt);
     } else {
       this.wetness = damp(this.wetness, 0.0, 0.18, dt); // gentle drying delay
     }
@@ -398,12 +546,32 @@ export class WeatherSystem {
     }
 
     // Determine primary current weather type
-    if (this.rainIntensity > 0.35) {
-      this.currentWeatherType = 'rain';
+    if (this.stormIntensity > 0.35) {
+      this.currentWeatherType = 'storm';
     } else if (this.snowIntensity > 0.35) {
       this.currentWeatherType = 'snow';
+    } else if (this.rainIntensity > 0.35) {
+      this.currentWeatherType = 'rain';
+    } else if (this.fogIntensity > 0.35) {
+      this.currentWeatherType = 'fog';
     } else {
       this.currentWeatherType = 'clear';
+    }
+
+    // Atmospheric lightning strikes during storms and heavy rain
+    const lightningActive = this.stormIntensity > 0.35 || this.rainIntensity > 0.45;
+    if (lightningActive) {
+      this.lightningTimer -= dt;
+      if (this.lightningTimer <= 0) {
+        const strikeDelay =
+          this.stormIntensity > 0.35 ? 6 + Math.random() * 8 : 14 + Math.random() * 16;
+        this.lightningTimer = strikeDelay;
+        this.lightningFlash = 1.0;
+        this.onLightningStrike?.();
+      }
+    }
+    if (this.lightningFlash > 0) {
+      this.lightningFlash = Math.max(0, this.lightningFlash - dt * 6.0);
     }
 
     // 2. Update environmental materials and lighting
@@ -423,17 +591,17 @@ export class WeatherSystem {
     // ── Wet Asphalt Simulation ──
     // Wet road becomes dark, glossy, and highly specular
     const baseRoughness = 0.96;
-    const wetRoughness = 0.26;
+    const wetRoughness = this.stormIntensity > 0.25 ? 0.18 : 0.26;
     const targetRoughness = baseRoughness - this.wetness * (baseRoughness - wetRoughness);
     this.roadMaterial.roughness = damp(this.roadMaterial.roughness, targetRoughness, 2.5, dt);
 
     const baseMetalness = 0.02;
-    const wetMetalness = 0.22;
+    const wetMetalness = this.stormIntensity > 0.25 ? 0.35 : 0.22;
     const targetMetalness = baseMetalness + this.wetness * (wetMetalness - baseMetalness);
     this.roadMaterial.metalness = damp(this.roadMaterial.metalness, targetMetalness, 2.5, dt);
 
-    // Darken road asphalt slightly when wet
-    const roadDarken = 1.0 - this.wetness * 0.22;
+    // Preserve road surface luminance; wetness is conveyed through specular shine and lowered roughness
+    const roadDarken = 1.0 - this.wetness * 0.05;
     this.roadMaterial.color.setRGB(roadDarken, roadDarken, roadDarken);
 
     // Shoulder wetness
@@ -456,10 +624,16 @@ export class WeatherSystem {
     const bg = this.scene.background as THREE.Color;
     const fog = this.scene.fog as THREE.FogExp2;
 
-    // Blend sky color
+    // Blend sky color across all climates
     this.workingColor.copy(this.clearSkyColor);
+    if (this.fogIntensity > 0.001) {
+      this.workingColor.lerp(this.fogSkyColor, this.fogIntensity);
+    }
     if (this.rainIntensity > 0.001) {
       this.workingColor.lerp(this.rainSkyColor, this.rainIntensity);
+    }
+    if (this.stormIntensity > 0.001) {
+      this.workingColor.lerp(this.stormSkyColor, this.stormIntensity);
     }
     if (this.snowIntensity > 0.001) {
       this.workingColor.lerp(this.snowSkyColor, this.snowIntensity);
@@ -468,20 +642,34 @@ export class WeatherSystem {
     fog.color.lerp(this.workingColor, 1.8 * dt);
 
     // Atmospheric Fog density:
-    // Clear = 0.0025, Rain = 0.0052 (thick storm haze), Snow = 0.0042 (misty snowfall)
+    // Clear = 0.0025, Rain = 0.0033 (gentle mist), Storm = 0.0048, Snow = 0.0038, Fog = 0.0175
     const targetFogDensity =
-      0.0025 + this.rainIntensity * (0.0052 - 0.0025) + this.snowIntensity * (0.0042 - 0.0025);
+      0.0025 +
+      this.rainIntensity * 0.0008 +
+      this.stormIntensity * 0.0023 +
+      this.snowIntensity * 0.0013 +
+      this.fogIntensity * 0.015;
     fog.density = damp(fog.density, targetFogDensity, 1.5, dt);
 
     // Directional Sun Light:
     const sun = this.lighting.sun;
     const targetSunIntensity =
-      3.2 * (1.0 - this.rainIntensity * 0.72) * (1.0 - this.snowIntensity * 0.42);
+      3.2 *
+      (1.0 - this.rainIntensity * 0.2) *
+      (1.0 - this.stormIntensity * 0.45) *
+      (1.0 - this.snowIntensity * 0.25) *
+      (1.0 - this.fogIntensity * 0.4);
     sun.intensity = damp(sun.intensity, targetSunIntensity, 2.0, dt);
 
     this.workingColor.copy(this.clearSunColor);
+    if (this.fogIntensity > 0.001) {
+      this.workingColor.lerp(this.fogSunColor, this.fogIntensity);
+    }
     if (this.rainIntensity > 0.001) {
       this.workingColor.lerp(this.rainSunColor, this.rainIntensity);
+    }
+    if (this.stormIntensity > 0.001) {
+      this.workingColor.lerp(this.stormSunColor, this.stormIntensity);
     }
     if (this.snowIntensity > 0.001) {
       this.workingColor.lerp(this.snowSunColor, this.snowIntensity);
@@ -491,12 +679,39 @@ export class WeatherSystem {
     // Hemisphere Light:
     const hemi = this.lighting.hemisphere;
     const targetHemiIntensity =
-      1.55 * (1.0 - this.rainIntensity * 0.45) * (1.0 - this.snowIntensity * 0.1);
+      1.55 *
+      (1.0 - this.rainIntensity * 0.12) *
+      (1.0 - this.stormIntensity * 0.3) *
+      (1.0 - this.snowIntensity * 0.05) *
+      (1.0 - this.fogIntensity * 0.25);
     hemi.intensity = damp(hemi.intensity, targetHemiIntensity, 2.0, dt);
 
+    // Apply lightning flash illumination burst
+    if (this.lightningFlash > 0.01) {
+      sun.intensity += this.lightningFlash * 6.5;
+      hemi.intensity += this.lightningFlash * 3.0;
+      sun.color.lerp(new THREE.Color(0xdce5ff), this.lightningFlash);
+      bg.lerp(new THREE.Color(0x758aa0), this.lightningFlash * 0.7);
+      fog.color.lerp(new THREE.Color(0x758aa0), this.lightningFlash * 0.7);
+      this.roadMaterial.roughness = Math.max(
+        0.14,
+        this.roadMaterial.roughness - this.lightningFlash * 0.15,
+      );
+      this.roadMaterial.metalness = Math.min(
+        0.55,
+        this.roadMaterial.metalness + this.lightningFlash * 0.35,
+      );
+    }
+
     this.workingColor.copy(this.clearHemiSky);
+    if (this.fogIntensity > 0.001) {
+      this.workingColor.lerp(this.fogHemiSky, this.fogIntensity);
+    }
     if (this.rainIntensity > 0.001) {
       this.workingColor.lerp(this.rainHemiSky, this.rainIntensity);
+    }
+    if (this.stormIntensity > 0.001) {
+      this.workingColor.lerp(this.stormHemiSky, this.stormIntensity);
     }
     if (this.snowIntensity > 0.001) {
       this.workingColor.lerp(this.snowHemiSky, this.snowIntensity);
@@ -504,8 +719,14 @@ export class WeatherSystem {
     hemi.color.lerp(this.workingColor, 2.0 * dt);
 
     this.workingColor.copy(this.clearHemiGround);
+    if (this.fogIntensity > 0.001) {
+      this.workingColor.lerp(this.fogHemiGround, this.fogIntensity);
+    }
     if (this.rainIntensity > 0.001) {
       this.workingColor.lerp(this.rainHemiGround, this.rainIntensity);
+    }
+    if (this.stormIntensity > 0.001) {
+      this.workingColor.lerp(this.stormHemiGround, this.stormIntensity);
     }
     if (this.snowIntensity > 0.001) {
       this.workingColor.lerp(this.snowHemiGround, this.snowIntensity);
@@ -687,16 +908,25 @@ export class WeatherSystem {
     if (!this.sprayPoints || !this.sprayPositions || !this.sprayVelocities || !this.sprayLifetimes)
       return;
 
-    // Spray only occurs when road is wet and vehicle is moving
-    const canSpray = this.wetness > 0.18 && speed > 6.0;
+    // Spray occurs on wet roads (water mist) and snowy roads (snow flurries)
+    const inRain = this.wetness > 0.18;
+    const inSnow = this.snowAccumulation > 0.15;
+    const canSpray = (inRain || inSnow) && speed > 5.0;
     const mat = this.sprayPoints.material as THREE.PointsMaterial;
-    mat.opacity = Math.min(0.35, this.wetness * 0.4);
 
     if (!canSpray) {
       this.sprayPoints.visible = false;
       return;
     }
     this.sprayPoints.visible = true;
+
+    if (inSnow && !inRain) {
+      mat.color.setRGB(0.96, 0.98, 1.0);
+      mat.opacity = Math.min(0.52, this.snowAccumulation * 0.5);
+    } else {
+      mat.color.setRGB(0.72, 0.84, 0.95);
+      mat.opacity = Math.min(0.38, this.wetness * 0.42);
+    }
 
     const pos = this.sprayPositions;
     const vel = this.sprayVelocities;

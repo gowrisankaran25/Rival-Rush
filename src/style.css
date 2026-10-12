@@ -1602,6 +1602,54 @@ h2 {
   font-size: 11px;
   color: var(--acid);
 }
+.road-condition-badge {
+  position: absolute;
+  top: 154px;
+  left: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 13px;
+  background: rgba(8, 14, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 3px;
+  backdrop-filter: blur(10px);
+  font:
+    600 9.5px 'DM Mono',
+    monospace;
+  letter-spacing: 0.08em;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  transition: all 0.25s ease;
+  pointer-events: none;
+}
+.road-condition-badge.is-optimal {
+  border-color: rgba(114, 255, 173, 0.55);
+  box-shadow: 0 0 14px rgba(114, 255, 173, 0.22);
+  color: #72ffad;
+}
+.road-condition-badge.is-warning {
+  border-color: rgba(255, 184, 102, 0.65);
+  box-shadow: 0 0 14px rgba(255, 184, 102, 0.28);
+  color: #ffb866;
+}
+.road-condition-badge.is-danger {
+  border-color: rgba(255, 75, 95, 0.75);
+  box-shadow: 0 0 16px rgba(255, 75, 95, 0.42);
+  color: #ff6b7d;
+  animation: road-pulse-danger 1.4s ease-in-out infinite;
+}
+@keyframes road-pulse-danger {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.88;
+    transform: scale(1.02);
+  }
+}
 .assist {
   position: absolute;
   left: 50%;
@@ -2137,6 +2185,12 @@ h2 {
   .run-stats {
     left: 15px;
     top: 72px;
+  }
+  .road-condition-badge {
+    left: 15px;
+    top: 130px;
+    padding: 4px 10px;
+    font-size: 8.5px;
   }
   .performance-hud {
     top: 64px;

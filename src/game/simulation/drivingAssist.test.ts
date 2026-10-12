@@ -111,4 +111,26 @@ describe('driving assistance', () => {
     expect(plan.targetSpeed).toBe(higherGearMaxSpeed);
     expect(plan.acceleration).toBe(GAME.acceleration * accelBoost);
   });
+
+  it('scales acceleration and braking based on road grip multiplier', () => {
+    const dryPlan = createSpeedPlan(
+      { steering: 0, confidence: 1, active: true, accelerating: true },
+      20,
+      GAME.maxSpeed,
+      { targetSpeed: GAME.maxSpeed, leadDistance: Infinity, leadIsIncoming: false },
+      GAME.maxSpeed,
+      1.0,
+      1.0,
+    );
+    const icePlan = createSpeedPlan(
+      { steering: 0, confidence: 1, active: true, accelerating: true },
+      20,
+      GAME.maxSpeed,
+      { targetSpeed: GAME.maxSpeed, leadDistance: Infinity, leadIsIncoming: false },
+      GAME.maxSpeed,
+      1.0,
+      0.46,
+    );
+    expect(icePlan.acceleration).toBeLessThan(dryPlan.acceleration);
+  });
 });

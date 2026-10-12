@@ -14,6 +14,9 @@ export class GameHud {
   private readonly steering = byId<HTMLElement>('steer-indicator');
   private readonly gearIndicator = document.getElementById('gear-indicator');
   private readonly gearName = document.getElementById('gear-name');
+  private readonly roadConditionBadge = document.getElementById('road-condition-badge');
+  private readonly roadConditionIcon = document.getElementById('road-condition-icon');
+  private readonly roadConditionText = document.getElementById('road-condition-text');
 
   show(): void {
     this.root.classList.remove('is-hidden');
@@ -33,6 +36,27 @@ export class GameHud {
     }
     if (this.gearName && snapshot.gearLabel) {
       this.gearName.textContent = snapshot.gearLabel;
+    }
+    if (this.roadConditionBadge && snapshot.roadCondition) {
+      const cond = snapshot.roadCondition;
+      if (this.roadConditionText) {
+        this.roadConditionText.textContent = cond.label;
+      }
+      if (this.roadConditionIcon) {
+        const icon =
+          cond.surface === 'icy'
+            ? '❄️'
+            : cond.surface === 'flooded'
+              ? '⛈️'
+              : cond.surface === 'wet'
+                ? '🌧️'
+                : cond.surface === 'damp'
+                  ? '🌫️'
+                  : '☀️';
+        this.roadConditionIcon.textContent = icon;
+      }
+      this.roadConditionBadge.classList.remove('is-optimal', 'is-warning', 'is-danger');
+      this.roadConditionBadge.classList.add(`is-${cond.statusType}`);
     }
   }
 }

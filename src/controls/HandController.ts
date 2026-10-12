@@ -3,7 +3,7 @@ import {
   HandLandmarker,
   type HandLandmarkerResult,
 } from '@mediapipe/tasks-vision';
-import { damp, steeringFromHands } from '../game/math';
+import { clamp, damp, lerp, steeringFromHands } from '../game/math';
 import type { ControlInput } from '../game/types';
 import {
   isClosedHand,
@@ -428,7 +428,7 @@ export class HandController {
       return;
     }
 
-    const raw = -steeringFromHands(hands[0].wrist, hands[1].wrist, this.neutralAngle);
+    const raw = -steeringFromHands(hands[0].wrist, hands[1].wrist, this.neutralAngle, 0.055, 1.35);
     // Two explicit gestures keep braking predictable: thumbs-up is a fixed
     // half brake, while showing both open palms requests a complete stop.
     const rawBrakePressure = palmsOpen ? 1 : hands.every((hand) => hand.thumbUp) ? 0.5 : 0;
@@ -453,8 +453,15 @@ export class HandController {
     this.wasRightIndexExtended = rightIndex;
     this.wasLeftIndexExtended = leftIndex;
 
+    // Adaptive velocity-sensitive smoothing:
+    // Gentle filtering (lambda 7.5) when holding lane steady absorbs camera noise and hand tremors.
+    // Dynamic boost (lambda up to 15.0) when turning rapidly gives immediate evasion response without lag.
+    const steeringDelta = Math.abs(raw - this.input.steering);
+    const adaptiveLambda = lerp(7.5, 15.0, clamp((steeringDelta - 0.08) / 0.35, 0, 1));
+    const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, 1 / 30);
+
     this.input = {
-      steering: damp(this.input.steering, raw, 13, 1 / 30),
+      steering: smoothedSteering,
       confidence,
       active: true,
       braking: braking ? true : undefined,

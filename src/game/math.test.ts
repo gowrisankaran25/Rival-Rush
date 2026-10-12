@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { GAME, laneOffsets, TRAFFIC_COUNT_OPTIONS } from './config';
-import { clamp, constrainToRoad, curveSpeedLimit, steeringFromHands } from './math';
+import {
+  clamp,
+  constrainToRoad,
+  curveSpeedLimit,
+  progressiveSteering,
+  speedSensitiveSteering,
+  steeringFromHands,
+} from './math';
 
 describe('driving math', () => {
   it('clamps values to the requested range', () => {
@@ -18,6 +25,21 @@ describe('driving math', () => {
   it('reaches full steering with about 35 degrees of hand rotation', () => {
     const fullTurn = steeringFromHands({ x: 0, y: 0 }, { x: 1, y: 0.7 }, 0);
     expect(fullTurn).toBe(1);
+  });
+
+  it('applies progressive non-linear response to soften micro-tremors near center', () => {
+    const smallSteer = 0.2;
+    const shaped = progressiveSteering(smallSteer, 1.45);
+    // 0.2^1.45 is ~0.096, which softens center sensitivity by over 50%
+    expect(shaped).toBeLessThan(smallSteer * 0.6);
+    expect(progressiveSteering(1.0)).toBe(1.0);
+    expect(progressiveSteering(-1.0)).toBe(-1.0);
+  });
+
+  it('stabilizes high-speed steering rate with speedSensitiveSteering', () => {
+    const lowSpeedRate = speedSensitiveSteering(1.0, 5); // 18 km/h
+    const highSpeedRate = speedSensitiveSteering(1.0, 55); // ~200 km/h
+    expect(highSpeedRate).toBeLessThan(lowSpeedRate * 0.6);
   });
 
   it('reduces target speed for upcoming curvature', () => {

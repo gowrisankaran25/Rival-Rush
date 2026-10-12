@@ -208,7 +208,7 @@ export class EngineSound {
 
   update(
     speedKph: number,
-    _weatherType: 'clear' | 'rain' | 'snow' = 'clear',
+    _weatherType: 'clear' | 'fog' | 'rain' | 'storm' | 'snow' | string = 'clear',
     rainIntensity = 0,
     snowIntensity = 0,
   ): void {
@@ -401,6 +401,46 @@ export class EngineSound {
     if (direction > 0) {
       this.synthExhaustPop(now + 0.04, engVol * 0.7);
     }
+  }
+
+  /**
+   * Synthesizes a deep, resonant atmospheric thunderclap with rolling rumble
+   * for realistic storm lightning strikes.
+   */
+  playThunder(): void {
+    if (!this.context || !this.playing || !this.enabled) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+
+    const bufferSize = Math.floor(this.context.sampleRate * 1.8);
+    const buffer = this.context.createBuffer(1, bufferSize, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    let lastOut = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      lastOut = (lastOut + 0.025 * white) / 1.025;
+      data[i] = lastOut * 3.2;
+    }
+
+    const noise = this.context.createBufferSource();
+    noise.buffer = buffer;
+
+    const filter = this.context.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(140, now);
+    filter.frequency.exponentialRampToValueAtTime(55, now + 1.6);
+
+    const gain = this.context.createGain();
+    const vol = this.masterVolume * 0.35;
+    gain.gain.setValueAtTime(vol * 0.25, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.07);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain ?? this.context.destination);
+    noise.start(now);
+    noise.stop(now + 1.85);
   }
 
   testSound(): void {

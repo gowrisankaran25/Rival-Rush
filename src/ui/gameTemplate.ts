@@ -64,6 +64,10 @@ export function createGameTemplate(): string {
           <div><span>SCORE</span><strong id="score">000000</strong></div>
           <div><span>HEALTH</span><strong id="health">100%</strong></div>
         </div>
+        <div id="road-condition-badge" class="road-condition-badge is-optimal" aria-label="Road surface condition">
+          <span id="road-condition-icon">☀️</span>
+          <span id="road-condition-text">ROAD: DRY · 100% GRIP</span>
+        </div>
         <div id="assist" class="assist"><i></i><span>READY</span></div>
         <div class="steer-meter">
           <span>L</span><div class="steer-track"><i id="steer-indicator"></i></div><span>R</span>

@@ -59,6 +59,7 @@ export function createSpeedPlan(
   threat: TrafficThreat,
   maxAllowedSpeed: number = GAME.maxSpeed,
   accelMultiplier: number = 1.0,
+  gripMultiplier: number = 1.0,
 ): SpeedPlan {
   let { targetSpeed } = threat;
   const { leadDistance, leadIsIncoming } = threat;
@@ -77,28 +78,33 @@ export function createSpeedPlan(
   let safetyBraking = targetSpeed < currentSpeed - 0.35;
   let acceleration: number;
 
+  const effectiveGrip = clamp(gripMultiplier, 0.4, 1.0);
+  const brakeScale = 0.65 + 0.35 * effectiveGrip;
+  const tractionScale = 0.55 + 0.45 * effectiveGrip;
+
   if (manualControl && control.active) {
     if (brakePressure > 0) {
       if (currentSpeed < 1.0 && !control.accelerating) {
         // Reverse
         targetSpeed = -maxAllowedSpeed * brakePressure * 0.4;
-        acceleration = GAME.acceleration * accelMultiplier;
+        acceleration = GAME.acceleration * accelMultiplier * tractionScale;
         safetyBraking = false;
       } else {
         const brakeSpeedCap = maxAllowedSpeed * (1 - brakePressure);
         targetSpeed = Math.min(targetSpeed, currentSpeed, brakeSpeedCap);
-        acceleration = isEmergency(leadDistance, leadIsIncoming)
-          ? GAME.emergencyBrake
-          : lerp(GAME.coastDeceleration, GAME.serviceBrake, brakePressure);
+        acceleration =
+          (isEmergency(leadDistance, leadIsIncoming)
+            ? GAME.emergencyBrake
+            : lerp(GAME.coastDeceleration, GAME.serviceBrake, brakePressure)) * brakeScale;
       }
     } else if (control.accelerating) {
       if (currentSpeed < -0.1) {
         // Braking while in reverse
         targetSpeed = 0;
-        acceleration = GAME.serviceBrake;
+        acceleration = GAME.serviceBrake * brakeScale;
       } else {
         targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
-        acceleration = GAME.acceleration * accelMultiplier;
+        acceleration = GAME.acceleration * accelMultiplier * tractionScale;
       }
     } else {
       targetSpeed = 0;
@@ -107,11 +113,11 @@ export function createSpeedPlan(
   } else {
     targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
     acceleration =
-      targetSpeed > currentSpeed
-        ? GAME.acceleration * accelMultiplier
+      (targetSpeed > currentSpeed
+        ? GAME.acceleration * accelMultiplier * tractionScale
         : isEmergency(leadDistance, leadIsIncoming)
           ? GAME.emergencyBrake
-          : GAME.serviceBrake;
+          : GAME.serviceBrake) * (targetSpeed > currentSpeed ? 1.0 : brakeScale);
   }
 
   return {
