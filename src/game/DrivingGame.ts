@@ -2,7 +2,15 @@ import * as THREE from 'three';
 import { PerformanceMonitor } from '../diagnostics/PerformanceMonitor';
 import type { PerformanceSnapshot } from '../diagnostics/PerformanceMonitor';
 import { GAME, laneOffsets } from './config';
-import { clamp, constrainToRoad, curveSpeedLimit, damp, roadCenter, roadHeading } from './math';
+import {
+  clamp,
+  constrainToRoad,
+  curveSpeedLimit,
+  damp,
+  roadCenter,
+  roadCurvature,
+  roadHeading,
+} from './math';
 import { createRoadStrip, updateRoadStrip } from './roadSurface';
 import { AdaptiveQuality, chooseInitialQuality } from './rendering/AdaptiveQuality';
 import type { GraphicsQualityMode, RenderQualitySettings } from './rendering/AdaptiveQuality';
@@ -16,7 +24,14 @@ import {
   updateSceneShadow,
 } from './sceneAssets';
 import type { SceneLighting } from './sceneAssets';
-import type { ControlInput, GamePhase, GameSnapshot } from './types';
+import type {
+  ControlInput,
+  GamePhase,
+  GameSnapshot,
+  RadarBlip,
+  RadarRoadNode,
+  RadarTelemetry,
+} from './types';
 import { VehicleAssets } from './vehicleAssets';
 import type { LoadedCarModel } from './vehicleAssets';
 import { DEFAULT_CAR_MODEL_ID, selectCarModelIds } from './vehicleCatalog';
@@ -517,6 +532,99 @@ export class DrivingGame {
     };
     this.assistMessage = `WEATHER: ${modeLabels[nextMode]}`;
     return nextMode;
+  }
+
+  getRadarTelemetry(rangeMeters = 160): RadarTelemetry {
+    const playerDistance = this.distance;
+    const playerLateral = this.lateral;
+    const playerSpeedKph = Math.round(this.speed * 3.6);
+    const roadWidth = GAME.roadWidth;
+
+    // Road curve nodes: sampled every 15 meters from 25m behind to rangeMeters ahead
+    const roadNodes: RadarRoadNode[] = [];
+    const step = 15;
+    for (let rel = -25; rel <= rangeMeters + 15; rel += step) {
+      const worldDist = playerDistance + rel;
+      const curveOffset = roadCenter(worldDist) - roadCenter(playerDistance);
+      roadNodes.push({
+        relDistance: rel,
+        curveOffset,
+      });
+    }
+
+    // Collect radar blips for traffic and interactables
+    const blips: RadarBlip[] = [
+      {
+        type: 'player',
+        relDistance: 0,
+        lateral: playerLateral,
+        speedKph: playerSpeedKph,
+      },
+    ];
+
+    for (const car of this.traffic) {
+      const relDistance = car.distance - playerDistance;
+      if (relDistance >= -30 && relDistance <= rangeMeters + 20) {
+        const lateral = laneOffsets[car.lane] + car.laneOffset;
+        blips.push({
+          type: car.direction === 1 ? 'traffic-lead' : 'traffic-incoming',
+          relDistance,
+          lateral,
+          speedKph: Math.round(car.speed * 3.6),
+          isRival: car.isRival,
+        });
+      }
+    }
+
+    for (const item of this.interactables) {
+      if (!item.active) continue;
+      const relDistance = item.distance - playerDistance;
+      if (relDistance >= -15 && relDistance <= rangeMeters + 20) {
+        const lateral = laneOffsets[item.lane] + item.laneOffset;
+        blips.push({
+          type: item.type,
+          relDistance,
+          lateral,
+        });
+      }
+    }
+
+    // Detect upcoming turns in the next 120 meters
+    let maxCurvature = 0;
+    let peakDistance = 0;
+    let turnHeadingDelta = 0;
+    for (let ahead = 20; ahead <= 120; ahead += 10) {
+      const c = roadCurvature(playerDistance + ahead);
+      if (c > maxCurvature) {
+        maxCurvature = c;
+        peakDistance = ahead;
+        const h0 = roadHeading(playerDistance);
+        const h1 = roadHeading(playerDistance + ahead);
+        turnHeadingDelta = Math.atan2(Math.sin(h1 - h0), Math.cos(h1 - h0));
+      }
+    }
+
+    let upcomingTurn: RadarTelemetry['upcomingTurn'] | undefined;
+    if (maxCurvature > 0.0035) {
+      const direction: 'left' | 'right' = turnHeadingDelta > 0 ? 'right' : 'left';
+      const severity: 'gentle' | 'sharp' | 'hairpin' =
+        maxCurvature > 0.009 ? 'hairpin' : maxCurvature > 0.0055 ? 'sharp' : 'gentle';
+      upcomingTurn = {
+        direction,
+        severity,
+        distanceMeters: Math.round(peakDistance),
+      };
+    }
+
+    return {
+      playerDistance,
+      playerLateral,
+      playerSpeedKph,
+      roadWidth,
+      blips,
+      roadNodes,
+      upcomingTurn,
+    };
   }
 
   pause(): void {
@@ -1296,6 +1404,7 @@ export class DrivingGame {
         currentGear: this.currentGear,
         gearLabel: GEAR_SPECS[this.currentGear - 1].label,
         gearMaxKph: GEAR_SPECS[this.currentGear - 1].maxSpeedKph,
+        radar: this.getRadarTelemetry(),
       });
     }
   };

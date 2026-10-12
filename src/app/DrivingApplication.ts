@@ -11,6 +11,7 @@ import { byId } from '../ui/dom';
 import { GameHud } from '../ui/GameHud';
 import { GraphicsSettings } from '../ui/GraphicsSettings';
 import { PerformanceHud } from '../ui/PerformanceHud';
+import { RadarHud } from '../ui/RadarHud';
 import { SoundSettings } from '../ui/SoundSettings';
 
 type TrackingState = 'ok' | 'warn' | 'off';
@@ -21,6 +22,7 @@ export class DrivingApplication {
   private readonly keyboard = new KeyboardController();
   private readonly audio = new EngineSound();
   private readonly hud = new GameHud();
+  private readonly radarHud = new RadarHud();
   private readonly graphicsSettings = new GraphicsSettings();
   private readonly soundSettings = new SoundSettings({
     masterVolume: this.audio.getMasterVolume(),
@@ -44,6 +46,7 @@ export class DrivingApplication {
   private readonly fullscreenButton = byId<HTMLButtonElement>('fullscreen-button');
   private readonly cameraButton = byId<HTMLButtonElement>('camera-button');
   private readonly weatherButton = byId<HTMLButtonElement>('weather-button');
+  private readonly radarButton = byId<HTMLButtonElement>('radar-button');
 
   private game: DrivingGame | null = null;
   private handController: HandController | null = null;
@@ -76,6 +79,7 @@ export class DrivingApplication {
     this.handController?.stop();
     this.keyboard.dispose();
     this.audio.stop();
+    this.radarHud.dispose();
     this.game?.dispose();
   }
 
@@ -210,6 +214,14 @@ export class DrivingApplication {
       },
       options,
     );
+    this.radarButton.addEventListener(
+      'click',
+      () => {
+        const zoom = this.radarHud.cycleZoom();
+        this.updateRadarButton(zoom);
+      },
+      options,
+    );
     byId('gear-up-btn').addEventListener(
       'click',
       () => {
@@ -288,6 +300,7 @@ export class DrivingApplication {
       (snapshot) => {
         this.lastSnapshot = snapshot;
         this.hud.update(snapshot, this.getControl().steering);
+        this.radarHud.update(snapshot.radar);
         this.audio.update(
           snapshot.speedKph,
           snapshot.weatherType ?? 'clear',
@@ -460,6 +473,7 @@ export class DrivingApplication {
     this.audio.startRacingMusic();
     this.overlay.classList.add('is-hidden');
     this.hud.show();
+    this.radarHud.show();
     this.game.start();
     this.pauseButton.textContent = 'PAUSE';
   }
@@ -596,6 +610,12 @@ export class DrivingApplication {
       this.updateWeatherButton(mode);
       return;
     }
+    if (event.code === 'KeyM') {
+      event.preventDefault();
+      const zoom = this.radarHud.cycleZoom();
+      this.updateRadarButton(zoom);
+      return;
+    }
     if (event.code !== 'Escape') return;
     if (document.fullscreenElement) void document.exitFullscreen();
     else this.pauseButton.click();
@@ -685,6 +705,17 @@ export class DrivingApplication {
     const select = document.getElementById('camera-select') as HTMLSelectElement | null;
     if (select && this.game) {
       select.value = String(this.game.getCameraMode());
+    }
+  }
+
+  private updateRadarButton(zoom: number): void {
+    const label = this.radarButton.querySelector('.radar-button-label');
+    if (label) {
+      label.textContent = `RADAR: ${zoom}M`;
+    }
+    const compactLabel = this.radarButton.querySelector('.radar-button-label-compact');
+    if (compactLabel) {
+      compactLabel.textContent = `${zoom}M`;
     }
   }
 }

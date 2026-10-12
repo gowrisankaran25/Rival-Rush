@@ -35,6 +35,7 @@ export function createGameTemplate(): string {
           </div>
           <button id="camera-button" class="icon-button" aria-label="Change camera view angle (C)"><span class="camera-button-label">CAM: FRONT ROAD</span><span class="camera-button-label-compact">CAM</span></button>
           <button id="weather-button" class="icon-button" aria-label="Change weather condition"><span class="weather-button-label">WEATHER: AUTO</span><span class="weather-button-label-compact">WTH</span></button>
+          <button id="radar-button" class="icon-button" aria-label="Cycle radar zoom range (M)"><span class="radar-button-label">RADAR: 160M</span><span class="radar-button-label-compact">MAP</span></button>
           <button id="graphics-button" class="icon-button" aria-label="Open graphics settings"><span class="graphics-button-label">GRAPHICS</span><span class="graphics-button-label-compact">GFX</span></button>
           <button id="sound-button" class="icon-button" aria-label="Open sound settings"><span class="sound-button-label">SOUND</span><span class="sound-button-label-compact">VOL</span></button>
           <button id="fullscreen-button" class="icon-button" aria-label="Enter full screen" aria-pressed="false">FULL SCREEN</button>
@@ -80,6 +81,28 @@ export function createGameTemplate(): string {
           <span>GEOMETRY<strong id="perf-geometries">--</strong></span>
           <span>TEXTURES<strong id="perf-textures">--</strong></span>
           <span>QUALITY<strong id="perf-quality">--</strong></span>
+        </div>
+      </aside>
+
+      <aside id="radar-hud" class="radar-hud is-hidden" aria-label="Tactical Road Radar">
+        <div class="radar-header">
+          <div class="radar-title">
+            <span class="radar-status-dot"></span>
+            <span>TACTICAL RADAR</span>
+          </div>
+          <button id="radar-zoom-btn" class="radar-zoom-btn" type="button" aria-label="Cycle radar zoom range (M)" title="Toggle Zoom Range (M)">160M</button>
+        </div>
+        <div class="radar-display">
+          <canvas id="radar-canvas" width="220" height="220" title="Click to cycle zoom range (100M / 160M / 240M)"></canvas>
+          <div id="radar-turn-warning" class="radar-turn-warning is-hidden">
+            <span id="radar-turn-arrow" class="turn-arrow">▶▶</span>
+            <span id="radar-turn-text" class="turn-text">TURN AHEAD</span>
+          </div>
+        </div>
+        <div class="radar-legend">
+          <span class="legend-item legend-traffic"><i></i>TRAFFIC</span>
+          <span class="legend-item legend-hazard"><i></i>HAZARD</span>
+          <span class="legend-item legend-bonus"><i></i>BONUS</span>
         </div>
       </aside>
 

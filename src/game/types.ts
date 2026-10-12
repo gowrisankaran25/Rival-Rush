@@ -16,6 +16,33 @@ export interface ControlInput {
   targetGear?: number;
 }
 
+export interface RadarBlip {
+  type: 'player' | 'traffic-lead' | 'traffic-incoming' | 'roadblock' | 'coin' | 'nitro';
+  relDistance: number;
+  lateral: number;
+  speedKph?: number;
+  isRival?: boolean;
+}
+
+export interface RadarRoadNode {
+  relDistance: number;
+  curveOffset: number;
+}
+
+export interface RadarTelemetry {
+  playerDistance: number;
+  playerLateral: number;
+  playerSpeedKph: number;
+  roadWidth: number;
+  blips: RadarBlip[];
+  roadNodes: RadarRoadNode[];
+  upcomingTurn?: {
+    direction: 'left' | 'right';
+    severity: 'gentle' | 'sharp' | 'hairpin';
+    distanceMeters: number;
+  };
+}
+
 export interface GameSnapshot {
   speedKph: number;
   distance: number;
@@ -33,4 +60,5 @@ export interface GameSnapshot {
   currentGear?: number;
   gearLabel?: string;
   gearMaxKph?: number;
+  radar?: RadarTelemetry;
 }
