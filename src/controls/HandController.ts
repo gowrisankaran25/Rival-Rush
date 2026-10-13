@@ -15,8 +15,9 @@ import {
 import type { HandTrackingResult, HandWorkerInput, HandWorkerOutput } from './handWorkerTypes';
 
 type TrackingStatus = 'idle' | 'loading' | 'ready' | 'calibrating' | 'tracking' | 'lost' | 'error';
-const INFERENCE_INTERVAL_MS = 1000 / 20;
-const PREVIEW_INTERVAL_MS = 1000 / 12;
+const INFERENCE_INTERVAL_MS = 1000 / 30;
+const PREVIEW_INTERVAL_MS = 1000 / 30;
+const DROPOUT_GRACE_MS = 280;
 const HAND_POINT_COLORS = [
   '#ecff76',
   '#ffb866',
@@ -374,10 +375,17 @@ export class HandController {
   }
 
   private consumeResult(result: HandTrackingResult): void {
+    const now = performance.now();
     if (result.landmarks.length !== 2) {
-      this.resetBrakeGesture();
-      this.input.active = false;
-      if (this.status === 'tracking') this.setStatus('lost');
+      if (now - this.lastSeen > DROPOUT_GRACE_MS) {
+        this.resetBrakeGesture();
+        this.input = {
+          steering: damp(this.input.steering, 0, 10, 1 / 30),
+          confidence: 0,
+          active: false,
+        };
+        if (this.status === 'tracking') this.setStatus('lost');
+      }
       return;
     }
 
@@ -396,12 +404,13 @@ export class HandController {
       hands[1].wrist.x - hands[0].wrist.x,
       hands[1].wrist.y - hands[0].wrist.y,
     );
-    const fistsClosed = hands.every((hand) => hand.closed);
-    const palmsOpen = hands.every((hand) => hand.openPalm);
-    if ((!fistsClosed && !palmsOpen) || separation < 0.14) {
-      this.resetBrakeGesture();
-      this.input.active = false;
-      if (this.status === 'tracking') this.setStatus('lost');
+    // Two distinct hands must be in camera view
+    if (separation < 0.10) {
+      if (now - this.lastSeen > DROPOUT_GRACE_MS) {
+        this.resetBrakeGesture();
+        this.input.active = false;
+        if (this.status === 'tracking') this.setStatus('lost');
+      }
       return;
     }
 
@@ -410,37 +419,30 @@ export class HandController {
       hands[1].wrist.x - hands[0].wrist.x,
     );
     const confidence = Math.min(hands[0].score, hands[1].score);
-    this.lastSeen = performance.now();
+    this.lastSeen = now;
 
     if (this.status === 'calibrating') {
       this.resetBrakeGesture();
-      if (!fistsClosed) {
-        this.input.active = false;
-        return;
-      }
       this.calibrationAngles.push(angle);
-      const progress = this.calibrationAngles.length / 45;
+      const progress = this.calibrationAngles.length / 30;
       this.onStatus('calibrating', progress);
-      if (this.calibrationAngles.length >= 45) {
+      if (this.calibrationAngles.length >= 30) {
         this.neutralAngle = this.circularAverage(this.calibrationAngles);
         this.setStatus('tracking');
       }
       return;
     }
 
-    const raw = -steeringFromHands(hands[0].wrist, hands[1].wrist, this.neutralAngle, 0.055, 1.35);
-    // Two explicit gestures keep braking predictable: thumbs-up is a fixed
-    // half brake, while showing both open palms requests a complete stop.
+    // Precise, linear steering response with minimal deadzone for micro-tremors
+    const raw = -steeringFromHands(hands[0].wrist, hands[1].wrist, this.neutralAngle, 0.03, 1.0);
+
+    const palmsOpen = hands.every((hand) => hand.openPalm);
     const rawBrakePressure = palmsOpen ? 1 : hands.every((hand) => hand.thumbUp) ? 0.5 : 0;
     const braking = this.brakeGesture.update(rawBrakePressure > 0, this.lastSeen);
 
     // Paddle Shifter Gear Control Gestures:
-    // Right hand index extended (right paddle) -> Shift Gear UP by 1 (increase speed)
-    // Left hand index extended (left paddle) -> Shift Gear DOWN by 1
-    // Strictly one gear shift per gesture extension: player must release (fold finger back) before shifting again.
     const rightIndex = isIndexExtended(hands[1].landmarks);
     const leftIndex = isIndexExtended(hands[0].landmarks);
-    const now = this.lastSeen;
 
     if (rightIndex && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 300) {
       this.pendingGearShift = 1;
@@ -453,17 +455,18 @@ export class HandController {
     this.wasRightIndexExtended = rightIndex;
     this.wasLeftIndexExtended = leftIndex;
 
-    // Adaptive velocity-sensitive smoothing:
-    // Gentle filtering (lambda 7.5) when holding lane steady absorbs camera noise and hand tremors.
-    // Dynamic boost (lambda up to 15.0) when turning rapidly gives immediate evasion response without lag.
+    // Fast, responsive adaptive smoothing:
+    // Lambda 18.0 when holding steady to eliminate noise without lag.
+    // Dynamic boost up to 32.0 when turning for instantaneous evasive authority.
     const steeringDelta = Math.abs(raw - this.input.steering);
-    const adaptiveLambda = lerp(7.5, 15.0, clamp((steeringDelta - 0.08) / 0.35, 0, 1));
+    const adaptiveLambda = lerp(18.0, 32.0, clamp((steeringDelta - 0.04) / 0.25, 0, 1));
     const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, 1 / 30);
 
     this.input = {
       steering: smoothedSteering,
       confidence,
       active: true,
+      accelerating: !braking, // Direct manual throttle while driving
       braking: braking ? true : undefined,
       brakePressure: braking ? rawBrakePressure : undefined,
     };

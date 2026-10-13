@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { createRoadStrip, updateRoadStrip } from './roadSurface';
+import {
+  createHighwayRoadTexture,
+  createRoadStrip,
+  updateRoadStrip,
+} from './roadSurface';
 
 describe('road surface', () => {
   it('keeps constant world-up normals while updating the ribbon', () => {
@@ -14,5 +18,13 @@ describe('road surface', () => {
       expect(normal.getZ(index)).toBe(0);
     }
     expect(geometry.boundingSphere).not.toBeNull();
+  });
+
+  it('creates highway road canvas texture with anisotropy and repeat wrapping', () => {
+    const texture = createHighwayRoadTexture(8);
+    expect(texture).toBeDefined();
+    expect(texture.wrapS).toBe(1000); // THREE.RepeatWrapping
+    expect(texture.wrapT).toBe(1000); // THREE.RepeatWrapping
+    expect(texture.anisotropy).toBe(8);
   });
 });

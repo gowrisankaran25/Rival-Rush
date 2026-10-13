@@ -203,4 +203,21 @@ describe('RadarHud', () => {
 
     radar.dispose();
   });
+
+  it('renders radar with headlightsActive true and false without errors', () => {
+    const radar = new RadarHud();
+    const telemetry: RadarTelemetry = {
+      playerDistance: 100,
+      playerLateral: 0,
+      playerSpeedKph: 80,
+      roadWidth: 12,
+      blips: [],
+      roadNodes: [],
+      headlightsActive: false,
+    };
+    expect(() => radar.update(telemetry)).not.toThrow();
+    telemetry.headlightsActive = true;
+    expect(() => radar.update(telemetry)).not.toThrow();
+    radar.dispose();
+  });
 });

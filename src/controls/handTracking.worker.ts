@@ -30,14 +30,27 @@ workerScope.onmessage = (event): void => {
     void (async () => {
       try {
         const vision = await FilesetResolver.forVisionTasks(message.wasmRoot, true);
-        landmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: message.modelAssetPath, delegate: 'CPU' },
-          runningMode: 'VIDEO',
-          numHands: 2,
-          minHandDetectionConfidence: 0.55,
-          minHandPresenceConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
+        let landmarkerInstance: HandLandmarker;
+        try {
+          landmarkerInstance = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: message.modelAssetPath, delegate: 'GPU' },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.45,
+            minTrackingConfidence: 0.45,
+          });
+        } catch {
+          landmarkerInstance = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: message.modelAssetPath, delegate: 'CPU' },
+            runningMode: 'VIDEO',
+            numHands: 2,
+            minHandDetectionConfidence: 0.5,
+            minHandPresenceConfidence: 0.45,
+            minTrackingConfidence: 0.45,
+          });
+        }
+        landmarker = landmarkerInstance;
         send({ type: 'ready' });
       } catch (error) {
         send({ type: 'error', message: error instanceof Error ? error.message : String(error) });

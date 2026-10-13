@@ -187,6 +187,8 @@ const AUDI_ETRON_MODEL_SPEC: CarModelSpec = {
 const CAR_MODEL_SPECS: readonly CarModelSpec[] = [...BASE_MODEL_SPECS, AUDI_ETRON_MODEL_SPEC];
 
 export class VehicleAssets {
+  private readonly prototypeCache = new Map<VehicleModelId, THREE.Group>();
+
   randomColor(): number {
     return CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)];
   }
@@ -202,8 +204,12 @@ export class VehicleAssets {
     const loadedModels = await Promise.all(
       selectedSpecs.map(async (spec): Promise<LoadedCarModel | null> => {
         try {
-          const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}${spec.path}`);
-          const trafficPrototype = this.prepareCarModel(gltf.scene, spec.rotationY, true, spec.id);
+          let trafficPrototype = this.prototypeCache.get(spec.id);
+          if (!trafficPrototype) {
+            const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}${spec.path}`);
+            trafficPrototype = this.prepareCarModel(gltf.scene, spec.rotationY, true, spec.id);
+            this.prototypeCache.set(spec.id, trafficPrototype);
+          }
           return {
             id: spec.id,
             trafficPrototype,
@@ -281,20 +287,40 @@ export class VehicleAssets {
       .map((wheel) => wheel.steeringPivot);
   }
 
-  setBrakeLights(car: THREE.Group, braking: boolean): void {
+  setBrakeLights(car: THREE.Group, braking: boolean, headlightsActive = true): void {
     const modelBrakeLights = car.userData.modelBrakeLights as ModelBrakeLight[] | undefined;
     for (const light of modelBrakeLights ?? []) {
-      light.material.color.setHex(braking ? light.brakingColor : light.restColor);
-      light.material.emissive.setHex(braking ? light.brakingEmissive : light.restEmissive);
-      light.material.emissiveIntensity = braking ? light.brakingIntensity : light.restIntensity;
+      if (braking) {
+        light.material.color.setHex(light.brakingColor);
+        light.material.emissive.setHex(light.brakingEmissive);
+        light.material.emissiveIntensity = light.brakingIntensity;
+      } else if (headlightsActive) {
+        light.material.color.setHex(light.restColor);
+        light.material.emissive.setHex(light.restEmissive);
+        light.material.emissiveIntensity = light.restIntensity;
+      } else {
+        light.material.color.setHex(light.restColor);
+        light.material.emissive.setHex(0x000000);
+        light.material.emissiveIntensity = 0;
+      }
     }
 
     const material = car.userData.tailMaterial as THREE.MeshStandardMaterial | undefined;
     if (material) {
       const highBrakeOnly = car.userData.highBrakeOnly === true;
-      material.color.setHex(braking ? 0xff1d29 : highBrakeOnly ? 0x260205 : 0x681015);
-      material.emissive.setHex(braking ? 0xff0712 : highBrakeOnly ? 0x000000 : 0x240003);
-      material.emissiveIntensity = braking ? 4.5 : highBrakeOnly ? 0 : 0.7;
+      if (braking) {
+        material.color.setHex(0xff1d29);
+        material.emissive.setHex(0xff0712);
+        material.emissiveIntensity = 4.5;
+      } else if (headlightsActive) {
+        material.color.setHex(highBrakeOnly ? 0x260205 : 0x681015);
+        material.emissive.setHex(highBrakeOnly ? 0x000000 : 0x240003);
+        material.emissiveIntensity = highBrakeOnly ? 0 : 0.7;
+      } else {
+        material.color.setHex(0x220204);
+        material.emissive.setHex(0x000000);
+        material.emissiveIntensity = 0;
+      }
     }
     const glow = car.userData.brakeGlow as THREE.PointLight | undefined;
     if (glow) glow.intensity = braking ? 4.2 : 0;

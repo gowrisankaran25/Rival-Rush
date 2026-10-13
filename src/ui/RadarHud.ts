@@ -242,15 +242,28 @@ export class RadarHud {
       }
       ctx.stroke();
 
-      // Center dashed road divider line
-      ctx.strokeStyle = 'rgba(236, 255, 118, 0.35)';
+      // Dual dashed lane divider lines for 3-lane highway
+      ctx.strokeStyle = 'rgba(236, 255, 118, 0.4)';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 6]);
+
+      // Divider 1 (Left / Center)
       ctx.beginPath();
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i];
         const ny = playerY - node.relDistance * pixelsPerMeter;
-        const nx = centerX + node.curveOffset * lateralScale;
+        const nx = centerX + node.curveOffset * lateralScale - halfWidth / 3;
+        if (i === 0) ctx.moveTo(nx, ny);
+        else ctx.lineTo(nx, ny);
+      }
+      ctx.stroke();
+
+      // Divider 2 (Center / Right)
+      ctx.beginPath();
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const ny = playerY - node.relDistance * pixelsPerMeter;
+        const nx = centerX + node.curveOffset * lateralScale + halfWidth / 3;
         if (i === 0) ctx.moveTo(nx, ny);
         else ctx.lineTo(nx, ny);
       }
@@ -265,7 +278,13 @@ export class RadarHud {
     }
 
     // ── 5. Player Vehicle Marker & Headlight Beam ──
-    this.drawPlayer(ctx, centerX, playerY, telemetry.playerLateral * lateralScale);
+    this.drawPlayer(
+      ctx,
+      centerX,
+      playerY,
+      telemetry.playerLateral * lateralScale,
+      telemetry.headlightsActive !== false,
+    );
 
     ctx.restore(); // Restore clipping
 
@@ -290,21 +309,24 @@ export class RadarHud {
     centerX: number,
     playerY: number,
     playerOffsetPx: number,
+    headlightsActive = true,
   ): void {
     const px = centerX + playerOffsetPx;
     const py = playerY;
 
     // Headlight cone
-    const grad = ctx.createLinearGradient(px, py, px, py - 35);
-    grad.addColorStop(0, 'rgba(0, 255, 204, 0.3)');
-    grad.addColorStop(1, 'rgba(0, 255, 204, 0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(px, py - 2);
-    ctx.lineTo(px - 14, py - 35);
-    ctx.lineTo(px + 14, py - 35);
-    ctx.closePath();
-    ctx.fill();
+    if (headlightsActive) {
+      const grad = ctx.createLinearGradient(px, py, px, py - 35);
+      grad.addColorStop(0, 'rgba(0, 255, 204, 0.3)');
+      grad.addColorStop(1, 'rgba(0, 255, 204, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(px, py - 2);
+      ctx.lineTo(px - 14, py - 35);
+      ctx.lineTo(px + 14, py - 35);
+      ctx.closePath();
+      ctx.fill();
+    }
 
     // Player arrow (pointing forward)
     ctx.fillStyle = '#00ffcc';

@@ -71,7 +71,8 @@ On the first visit, a setup popup keeps the game locked while it downloads appro
 
 - **Hand mode:** hold two closed hands apart, keep them level during calibration, and rotate them like a steering wheel. Raise both thumbs for 50% braking or show both open palms for a full stop.
 - **Keyboard mode:** use `W` or up arrow to accelerate, `S` or down arrow to brake and reverse, and `A` / `D` or left / right arrows to steer.
-- **Camera views:** press `C` to cycle between the 6 different camera views (Driver, Chase, Far Chase, Left Side, Right Side, and Face View).
+- **Camera views:** press `C` to cycle between the camera views (Front Road, Chase, Far Chase, Hood, Bumper).
+- **Headlights & Lights:** click **LIGHTS** in the top bar or press **H** / **L** to cycle headlight modes (Auto, On, Off). In Auto mode, headlights turn on automatically during inclement weather (rainstorms, blizzards, fog) and turn off during crisp clear daytime. Brake lights dynamically illuminate upon deceleration.
 - **Sound Settings:** click **SOUND** in the top bar to adjust Master Volume (with up to 200% volume boost), Engine roar, Synth beat, or preview with Test Sound. Audio settings are saved automatically.
 - **Pause:** use the Pause button or press `Escape`.
 - **Performance diagnostics:** press `F3` to toggle the performance HUD. Add `?perf=1` to the URL to open it automatically.

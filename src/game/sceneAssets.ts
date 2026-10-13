@@ -8,6 +8,7 @@ export interface SurfaceMaterialOptions {
   textureRoot?: string;
   transparent?: boolean;
   alphaTest?: number;
+  customMap?: THREE.Texture;
 }
 
 export interface SceneLighting {
@@ -66,9 +67,11 @@ export class SurfaceTextureStore {
     const repeatY = options.repeatY ?? 1;
     const textureRoot = options.textureRoot ?? 'roads/textures';
     const surfaceMap = this.load(metallicRoughness, false, repeatX, repeatY, textureRoot);
+    const map =
+      options.customMap ?? (baseColor ? this.load(baseColor, true, repeatX, repeatY, textureRoot) : null);
     return new THREE.MeshStandardMaterial({
       color: options.tint ?? 0xffffff,
-      map: this.load(baseColor, true, repeatX, repeatY, textureRoot),
+      map,
       normalMap: this.load(normal, false, repeatX, repeatY, textureRoot),
       normalScale: new THREE.Vector2(options.normalScale ?? 0.45, options.normalScale ?? 0.45),
       roughnessMap: surfaceMap,

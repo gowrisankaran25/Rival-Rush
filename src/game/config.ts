@@ -1,8 +1,8 @@
 export const TRAFFIC_COUNT_OPTIONS = [0, 4, 8, 12, 16] as const;
 
 export const GAME = {
-  roadWidth: 28,
-  laneWidth: 11.5,
+  roadWidth: 28.5,
+  laneWidth: 8.4,
   maxSpeed: 45,
   minCurveSpeed: 18,
   acceleration: 8,
@@ -10,7 +10,7 @@ export const GAME = {
   serviceBrake: 13,
   emergencyBrake: 25,
   steeringRate: 8.5,
-  maxLateral: 11.9,
+  maxLateral: 12.6,
   roadEdgeMargin: 2.1,
   trafficCount: 16,
   lookAhead: 260,
@@ -21,4 +21,4 @@ export const GAME = {
   conceptCollisionWidth: 4.45,
 } as const;
 
-export const laneOffsets = [-GAME.laneWidth / 2, GAME.laneWidth / 2] as const;
+export const laneOffsets = [-8.4, 0, 8.4] as const;

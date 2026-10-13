@@ -466,6 +466,7 @@ export class WeatherSystem {
     vehicleHeading: number,
     cameraPosition: THREE.Vector3,
     playerPosition: THREE.Vector3,
+    headlightsActive = true,
   ): void {
     this.elapsedTime += dt;
 
@@ -578,7 +579,7 @@ export class WeatherSystem {
     this.updateEnvironment(dt);
 
     // 3. Update rain streaks
-    this.updateRain(dt, speed, vehicleHeading, cameraPosition);
+    this.updateRain(dt, speed, vehicleHeading, cameraPosition, headlightsActive);
 
     // 4. Update snowflakes
     this.updateSnow(dt, speed, vehicleHeading, cameraPosition);
@@ -739,6 +740,7 @@ export class WeatherSystem {
     speed: number,
     vehicleHeading: number,
     cameraPosition: THREE.Vector3,
+    headlightsActive = true,
   ): void {
     if (!this.rainLines || !this.rainPositions || !this.rainDropBase || !this.rainDropSpeeds)
       return;
@@ -811,7 +813,7 @@ export class WeatherSystem {
       // Headlight cone boost:
       // In front of the car: z in [-22, -1], |x| < 4.5, y in [-1, 2.5]
       if (cols) {
-        if (hz < -1 && hz > -22 && Math.abs(hx) < 4.5 && hy > -1 && hy < 2.5) {
+        if (headlightsActive && hz < -1 && hz > -22 && Math.abs(hx) < 4.5 && hy > -1 && hy < 2.5) {
           // Drops illuminated by headlights shine brilliant white
           cols[i6] = 1.0;
           cols[i6 + 1] = 1.0;

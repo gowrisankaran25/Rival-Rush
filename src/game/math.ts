@@ -7,24 +7,65 @@ export const damp = (from: number, to: number, lambda: number, dt: number): numb
 export const inverseLerp = (from: number, to: number, value: number): number =>
   clamp((value - from) / (to - from), 0, 1);
 
+import { HIGHWAY_MAP_SEGMENTS, TRACK_TOTAL_LENGTH } from './trackConfig';
+import { ProceduralTrackSystem } from './world/ProceduralTrackSystem';
+
+export { HIGHWAY_MAP_SEGMENTS, TRACK_TOTAL_LENGTH };
+
+/** Singleton procedural track engine powering endless road generation. */
+export const proceduralTrack = new ProceduralTrackSystem();
+
+/**
+ * Quintic Hermite smootherstep:
+ * S(0) = 0, S(1) = 1, S'(0) = 0, S'(1) = 0, S''(0) = 0, S''(1) = 0
+ * Guarantees C2 continuous transition with 0 jerk or acceleration spikes at boundaries.
+ */
+export function smootherstep(u: number): number {
+  const t = clamp(u, 0, 1);
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+/**
+ * Lateral center of the highway at the given distance along the map.
+ */
 export function roadCenter(distance: number): number {
-  return (
-    Math.sin(distance * 0.0065) * 17 +
-    Math.sin(distance * 0.014 + 1.8) * 7 +
-    Math.sin(distance * 0.0021 + 0.4) * 25
-  );
+  return proceduralTrack.getCenter(distance);
+}
+
+/**
+ * Vertical elevation (Y) of the highway in meters at the given distance.
+ */
+export function roadElevation(distance: number): number {
+  return proceduralTrack.getElevation(distance);
+}
+
+/**
+ * Road longitudinal slope / pitch angle in radians at the given distance.
+ */
+export function roadPitch(distance: number): number {
+  return proceduralTrack.getPitch(distance);
+}
+
+/**
+ * Returns true if the given distance is on an elevated bridge section.
+ */
+export function isBridgeSection(distance: number): boolean {
+  return proceduralTrack.isBridge(distance);
+}
+
+/**
+ * Returns true if the given distance is inside a tunnel section.
+ */
+export function isTunnelSection(distance: number): boolean {
+  return proceduralTrack.isTunnel(distance);
 }
 
 export function roadHeading(distance: number): number {
-  const step = 0.5;
-  return Math.atan2(-(roadCenter(distance + step) - roadCenter(distance - step)), step * 2);
+  return proceduralTrack.getHeading(distance);
 }
 
 export function roadCurvature(distance: number): number {
-  const step = 5;
-  const a = roadHeading(distance - step);
-  const b = roadHeading(distance + step);
-  return Math.abs(Math.atan2(Math.sin(b - a), Math.cos(b - a))) / (step * 2);
+  return proceduralTrack.getCurvature(distance);
 }
 
 export function steeringFromHands(

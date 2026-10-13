@@ -204,6 +204,11 @@ describe('VehicleAssets wheel animation', () => {
     assets.setBrakeLights(car, false);
     expect(material.emissiveIntensity).toBeCloseTo(restingIntensity);
     expect(material.emissive.getHex()).toBe(0x400000);
+
+    // When headlights are off during daytime and car is not braking, emissive is extinguished
+    assets.setBrakeLights(car, false, false);
+    expect(material.emissiveIntensity).toBe(0);
+    expect(material.emissive.getHex()).toBe(0x000000);
   });
 
   it('uses the Ford red-glass material as a working brake light', () => {

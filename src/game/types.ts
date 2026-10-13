@@ -1,5 +1,17 @@
 export type GamePhase =
-  'loading' | 'permission' | 'calibrating' | 'ready' | 'playing' | 'paused' | 'crashed';
+  | 'loading'
+  | 'permission'
+  | 'calibrating'
+  | 'ready'
+  | 'countdown'
+  | 'racing'
+  | 'final_approach'
+  | 'finishing'
+  | 'results'
+  | 'restarting'
+  | 'playing'
+  | 'paused'
+  | 'crashed';
 export type ControlMode = 'hands' | 'keyboard';
 
 export interface ControlInput {
@@ -42,8 +54,10 @@ export interface RadarTelemetry {
     distanceMeters: number;
   };
   roadCondition?: RoadCondition;
+  headlightsActive?: boolean;
 }
 
+export type HeadlightMode = 'auto' | 'on' | 'off';
 export type WeatherType = 'clear' | 'fog' | 'rain' | 'storm' | 'snow';
 export type WeatherMode = 'auto' | 'clear' | 'fog' | 'rain' | 'storm' | 'snow';
 
@@ -56,6 +70,18 @@ export interface RoadCondition {
   tireSlip: number;
   label: string;
   statusType: 'optimal' | 'warning' | 'danger';
+}
+
+export interface RaceResult {
+  won: boolean;
+  finishPosition: number;
+  completionTimeSeconds: number;
+  distanceMeters: number;
+  maxSpeedKph: number;
+  overtakes: number;
+  score: number;
+  health: number;
+  mode: string;
 }
 
 export interface GameSnapshot {
@@ -79,4 +105,14 @@ export interface GameSnapshot {
   gearMaxKph?: number;
   radar?: RadarTelemetry;
   roadCondition?: RoadCondition;
+  headlightMode?: HeadlightMode;
+  headlightsActive?: boolean;
+  raceTimeSeconds?: number;
+  distanceRemaining?: number | null;
+  finishDistance?: number | null;
+  position?: number;
+  countdownValue?: number | null; // 3, 2, 1, 0 (GO)
+  approachWarning?: string | null; // '500M', '300M', '100M', etc.
+  raceModeName?: string;
 }
+

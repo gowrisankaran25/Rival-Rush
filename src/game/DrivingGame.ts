@@ -8,12 +8,19 @@ import {
   curveSpeedLimit,
   damp,
   progressiveSteering,
+  proceduralTrack,
   roadCenter,
   roadCurvature,
+  roadElevation,
   roadHeading,
+  roadPitch,
   speedSensitiveSteering,
 } from './math';
-import { createRoadStrip, updateRoadStrip } from './roadSurface';
+import {
+  createHighwayRoadTexture,
+  createRoadStrip,
+  updateRoadStrip,
+} from './roadSurface';
 import { AdaptiveQuality, chooseInitialQuality } from './rendering/AdaptiveQuality';
 import type { GraphicsQualityMode, RenderQualitySettings } from './rendering/AdaptiveQuality';
 import { SceneryAssets } from './sceneryAssets';
@@ -30,15 +37,19 @@ import type {
   ControlInput,
   GamePhase,
   GameSnapshot,
+  HeadlightMode,
   RadarBlip,
   RadarRoadNode,
   RadarTelemetry,
+  RaceResult,
 } from './types';
 import { VehicleAssets } from './vehicleAssets';
-import type { LoadedCarModel } from './vehicleAssets';
 import { DEFAULT_CAR_MODEL_ID, selectCarModelIds } from './vehicleCatalog';
 import type { CarModelId } from './vehicleCatalog';
 import { RoadsideFenceSystem } from './world/RoadsideFenceSystem';
+import { HighwayScenerySystem } from './world/HighwayScenerySystem';
+import { FinishLineGantry } from './world/FinishLineGantry';
+import type { RaceModeConfig } from './progression/raceModes';
 import { WeatherSystem } from './weather/WeatherSystem';
 import type { WeatherMode, WeatherType } from './weather/WeatherSystem';
 import { WindshieldWeatherOverlay } from '../ui/WindshieldWeatherOverlay';
@@ -344,7 +355,7 @@ export class DrivingGame {
   private readonly vehicleAssets = new VehicleAssets();
   private readonly player = new THREE.Group();
   private readonly traffic: TrafficCar[] = [];
-  private readonly scenery: THREE.Group[] = [];
+  private readonly highwayScenery: HighwayScenerySystem;
   private readonly mountains: THREE.Group[] = [];
   private readonly clouds: THREE.Sprite[] = [];
   private readonly lighting: SceneLighting;
@@ -365,8 +376,8 @@ export class DrivingGame {
   private phase: GamePhase = 'ready';
   private distance = 0;
   private speed = 0;
-  private lateral: number = laneOffsets[0];
-  private worldX = roadCenter(0) + Math.cos(roadHeading(0)) * laneOffsets[0];
+  private lateral: number = laneOffsets[1];
+  private worldX = roadCenter(0) + Math.cos(roadHeading(0)) * laneOffsets[1];
   private vehicleHeading = roadHeading(0);
   private steeringVisual = 0;
   private overtakes = 0;
@@ -379,8 +390,9 @@ export class DrivingGame {
   private interactables: Interactable[] = [];
   private bonusScore = 0;
   private nitroTimer = 0;
-  private carModelsPromise?: Promise<LoadedCarModel[]>;
   private carModelsApplied = false;
+  private currentAppliedCarId: CarModelId | null = null;
+  private currentAppliedColor: number | undefined = undefined;
   private sceneAssetsLoaded = false;
   private lastSnapshot = 0;
   private lastIdleRender = 0;
@@ -403,11 +415,32 @@ export class DrivingGame {
   private gearShiftCooldown = 0;
   private gearShiftSurge = 0;
   private tireSlip = 0;
+  private headlightMode: HeadlightMode = 'auto';
+  private isPlayerBraking = false;
 
   // ── Dynamic Weather ──
   private readonly weatherSystem: WeatherSystem;
   private readonly windshieldOverlay: WindshieldWeatherOverlay;
   private readonly headlightBeam: THREE.Mesh;
+
+  // ── Finish Line & Race State Management ──
+  private readonly finishLine: FinishLineGantry;
+  private raceModeConfig: RaceModeConfig | null = null;
+  private currentRaceMode = 'endless';
+  private finishDistance: number | null = null;
+  private timeLimitSeconds: number | null = null;
+  private raceTimeSeconds = 0;
+  private countdownTimer = 0;
+  private countdownValue: number | null = null;
+  private lastBeepValue: number | null = null;
+  private approachWarning: string | null = null;
+  private finishResultEmitted = false;
+  private finishEaseTimer = 0;
+  private isFinishingSequence = false;
+  private hasRival = false;
+  private rivalCar: TrafficCar | null = null;
+  private onFinishCallback?: (result: RaceResult) => void;
+  private onCountdownBeepCallback?: (isGo: boolean) => void;
 
   constructor(
     private readonly container: HTMLElement,
@@ -442,14 +475,18 @@ export class DrivingGame {
 
     this.textureStore = new SurfaceTextureStore(this.renderer.capabilities.getMaxAnisotropy());
 
+    const roadTexture = createHighwayRoadTexture(this.renderer.capabilities.getMaxAnisotropy());
+    this.textureStore.track(roadTexture);
+
     const roadMaterial = this.textureStore.createMaterial(
-      'RoadLines_baseColor.jpeg',
+      '',
       'RoadLines_normal.png',
       'RoadLines_metallicRoughness.png',
       {
         textureRoot: 'roads/textures',
         normalScale: 0.34,
         tint: 0xffffff,
+        customMap: roadTexture,
       },
     );
     const shoulderMaterial = this.textureStore.createMaterial(
@@ -481,14 +518,21 @@ export class DrivingGame {
     });
     this.sceneryAssets = new SceneryAssets(rockMaterial);
 
-    this.roadGeometry = createRoadStrip(GAME.roadWidth, 220, 0, 1, GAME.roadWidth);
+    this.roadGeometry = createRoadStrip(GAME.roadWidth, 260, 0, 1, 12);
     this.roadMesh = new THREE.Mesh(this.roadGeometry, roadMaterial);
     this.roadMesh.receiveShadow = true;
     this.scene.add(this.roadMesh);
 
-    this.shoulderGeometry = createRoadStrip(GAME.roadWidth + 5.5, 220);
+    this.shoulderGeometry = createRoadStrip(
+      GAME.roadWidth + 7.5,
+      260,
+      0,
+      Math.max(1, (GAME.roadWidth + 7.5) / 9),
+      12,
+    );
+    this.shoulderGeometry.userData.isShoulder = true;
     this.shoulderMesh = new THREE.Mesh(this.shoulderGeometry, shoulderMaterial);
-    this.shoulderMesh.position.y = -0.055;
+    this.shoulderMesh.position.y = 0;
     this.shoulderMesh.receiveShadow = true;
     this.scene.add(this.shoulderMesh);
 
@@ -523,6 +567,7 @@ export class DrivingGame {
     this.scene.add(this.groundSnow);
 
     this.roadsideFences = new RoadsideFenceSystem(this.scene);
+    this.highwayScenery = new HighwayScenerySystem(this.scene, this.sceneryAssets);
 
     this.lighting = addSceneLighting(this.scene, this.adaptiveQuality.settings.shadowMapSize);
 
@@ -537,7 +582,8 @@ export class DrivingGame {
 
     this.setupWorld();
     this.setupInteractables();
-    const natureReady = this.sceneryAssets.loadNature(this.scenery);
+    this.finishLine = new FinishLineGantry(this.scene);
+    const natureReady = this.sceneryAssets.loadNature(this.highwayScenery.getNatureTargets());
     const mountainsReady = this.sceneryAssets.loadMountains(this.mountains);
     this.sceneAssetsReady = Promise.all([
       this.textureStore.whenReady(),
@@ -569,8 +615,68 @@ export class DrivingGame {
       throw new Error('The game cannot start before all required assets load.');
     }
     if (this.phase === 'crashed') this.reset();
-    this.phase = 'playing';
+    this.startCountdown();
+  }
+
+  setRaceMode(config: RaceModeConfig): void {
+    this.raceModeConfig = config;
+    this.currentRaceMode = config.id;
+    this.finishDistance = config.distanceMeters;
+    this.timeLimitSeconds = config.timeLimitSeconds;
+    this.hasRival = config.hasRival;
+    this.finishLine.setFinishDistance(this.finishDistance);
+
+    this.setTrafficCount(config.defaultTrafficCount);
+
+    if (this.hasRival && this.traffic.length > 0) {
+      this.rivalCar = this.traffic[0];
+      this.rivalCar.isRival = true;
+      this.rivalCar.direction = 1;
+      this.rivalCar.distance = this.distance + 42;
+      this.rivalCar.speed = 46;
+      this.rivalCar.targetSpeed = 58;
+    } else {
+      this.rivalCar = null;
+      this.traffic.forEach((c) => {
+        c.isRival = false;
+      });
+    }
+  }
+
+  setFinishCallback(cb: (result: RaceResult) => void): void {
+    this.onFinishCallback = cb;
+  }
+
+  setCountdownCallback(cb: (isGo: boolean) => void): void {
+    this.onCountdownBeepCallback = cb;
+  }
+
+  getRivalPosition(): number {
+    if (!this.hasRival || !this.rivalCar) return 1;
+    return this.distance >= this.rivalCar.distance ? 1 : 2;
+  }
+
+  getRaceModeConfig(): RaceModeConfig | null {
+    return this.raceModeConfig;
+  }
+
+  startCountdown(): void {
+    if (!this.sceneAssetsLoaded || !this.carModelsApplied) {
+      throw new Error('The game cannot start before all required assets load.');
+    }
+    this.phase = 'countdown';
+    this.countdownTimer = 3.0;
+    this.countdownValue = 3;
+    this.lastBeepValue = null;
     this.clock.getDelta();
+  }
+
+  restartRace(modeConfig?: RaceModeConfig): void {
+    this.reset();
+    if (modeConfig) {
+      this.setRaceMode(modeConfig);
+    }
+    this.startCountdown();
   }
 
   toggleCameraAngle(): string {
@@ -581,6 +687,7 @@ export class DrivingGame {
     this.cameraMode = (this.cameraMode + 1) % CAMERA_CONFIGS.length;
     const mode = CAMERA_CONFIGS[this.cameraMode];
     this.assistMessage = `CAM: ${mode.name} [C]`;
+    if (this.phase === 'ready') this.setupInitialCamera();
     return mode.name;
   }
 
@@ -588,6 +695,7 @@ export class DrivingGame {
     this.cameraMode = Math.max(0, Math.min(CAMERA_CONFIGS.length - 1, modeIndex));
     const mode = CAMERA_CONFIGS[this.cameraMode];
     this.assistMessage = `CAM: ${mode.name} [C]`;
+    if (this.phase === 'ready') this.setupInitialCamera();
     return mode.name;
   }
 
@@ -650,6 +758,7 @@ export class DrivingGame {
 
   setWeatherMode(mode: WeatherMode): void {
     this.weatherSystem.setMode(mode);
+    this.refreshVehicleLighting();
   }
 
   cycleWeather(): WeatherMode {
@@ -663,7 +772,69 @@ export class DrivingGame {
       snow: 'WINTER BLIZZARD',
     };
     this.assistMessage = `WEATHER: ${modeLabels[nextMode]}`;
+    this.refreshVehicleLighting();
     return nextMode;
+  }
+
+  getHeadlightMode(): HeadlightMode {
+    return this.headlightMode;
+  }
+
+  isHeadlightsActive(): boolean {
+    if (this.headlightMode === 'on') return true;
+    if (this.headlightMode === 'off') return false;
+    return (
+      this.weatherSystem.getRainIntensity() > 0.04 ||
+      this.weatherSystem.getStormIntensity() > 0.04 ||
+      this.weatherSystem.getFogIntensity() > 0.04 ||
+      this.weatherSystem.getSnowIntensity() > 0.12
+    );
+  }
+
+  cycleHeadlightMode(): HeadlightMode {
+    switch (this.headlightMode) {
+      case 'auto':
+        this.headlightMode = 'on';
+        break;
+      case 'on':
+        this.headlightMode = 'off';
+        break;
+      case 'off':
+        this.headlightMode = 'auto';
+        break;
+    }
+    const modeLabels: Record<HeadlightMode, string> = {
+      auto: 'LIGHTS: AUTO (CLIMATE-SENSITIVE)',
+      on: 'LIGHTS: ON (ACTIVE BEAM)',
+      off: 'LIGHTS: OFF',
+    };
+    this.assistMessage = modeLabels[this.headlightMode];
+    this.refreshVehicleLighting();
+    return this.headlightMode;
+  }
+
+  setHeadlightMode(mode: HeadlightMode): void {
+    this.headlightMode = mode;
+    this.refreshVehicleLighting();
+  }
+
+  private refreshVehicleLighting(): void {
+    const active = this.isHeadlightsActive();
+    this.updateVehicleHeadlights(this.player, active);
+    this.setVehicleBrake(this.player, this.isPlayerBraking);
+    this.headlightBeam.visible = active;
+  }
+
+  private updateVehicleHeadlights(carMesh: THREE.Group, active: boolean): void {
+    const rig = carMesh.userData.lightRig as VehicleLightRig | undefined;
+    if (!rig) return;
+    for (const flare of rig.headFlares) {
+      flare.visible = active;
+      (flare.material as THREE.MeshBasicMaterial).opacity = active ? 0.88 : 0;
+    }
+    for (const lens of rig.headLenses) {
+      (lens.material as THREE.MeshBasicMaterial).color.setHex(active ? 0xffffff : 0x3a4048);
+    }
   }
 
   getRadarTelemetry(rangeMeters = 160): RadarTelemetry {
@@ -738,7 +909,7 @@ export class DrivingGame {
 
     let upcomingTurn: RadarTelemetry['upcomingTurn'] | undefined;
     if (maxCurvature > 0.0035) {
-      const direction: 'left' | 'right' = turnHeadingDelta > 0 ? 'right' : 'left';
+      const direction: 'left' | 'right' = turnHeadingDelta > 0 ? 'left' : 'right';
       const severity: 'gentle' | 'sharp' | 'hairpin' =
         maxCurvature > 0.009 ? 'hairpin' : maxCurvature > 0.0055 ? 'sharp' : 'gentle';
       upcomingTurn = {
@@ -757,6 +928,7 @@ export class DrivingGame {
       roadNodes,
       upcomingTurn,
       roadCondition: this.weatherSystem.getRoadCondition(playerSpeedKph, this.tireSlip),
+      headlightsActive: this.isHeadlightsActive(),
     };
   }
 
@@ -785,8 +957,8 @@ export class DrivingGame {
       item.active = false;
       item.mesh.visible = false;
     });
-    this.lateral = laneOffsets[0];
-    this.worldX = roadCenter(0) + Math.cos(roadHeading(0)) * laneOffsets[0];
+    this.lateral = laneOffsets[1];
+    this.worldX = roadCenter(0) + Math.cos(roadHeading(0)) * laneOffsets[1];
     this.vehicleHeading = roadHeading(0);
     this.overtakes = 0;
     this.assistMessage = 'READY';
@@ -816,10 +988,26 @@ export class DrivingGame {
       interactableCursor += 80 + Math.random() * 120;
     }
 
-    this.scenery.forEach((object, index) => {
-      object.userData.distance = -45 + index * 12.5;
-      object.userData.worldPositioned = false;
-    });
+    proceduralTrack.reset();
+    this.highwayScenery.reset();
+
+    this.raceTimeSeconds = 0;
+    this.finishResultEmitted = false;
+    this.isFinishingSequence = false;
+    this.finishEaseTimer = 0;
+    this.countdownValue = null;
+    this.lastBeepValue = null;
+    this.approachWarning = null;
+    this.finishLine.setFinishDistance(this.finishDistance);
+
+    if (this.hasRival && this.traffic.length > 0) {
+      this.rivalCar = this.traffic[0];
+      this.rivalCar.isRival = true;
+      this.rivalCar.direction = 1;
+      this.rivalCar.distance = 42;
+      this.rivalCar.speed = 46;
+      this.rivalCar.targetSpeed = 58;
+    }
   }
 
   getPhase(): GamePhase {
@@ -858,32 +1046,20 @@ export class DrivingGame {
     this.driverCar = driverCar;
     this.driverColor = driverColor;
     this.setTrafficCount(trafficCount);
-    await this.loadCarModels(driverCar, this.traffic.length === 0 ? 1 : modelCount);
+    await this.loadCarModels(driverCar, this.traffic.length === 0 ? 1 : modelCount, true);
   }
 
   dispose(): void {
     cancelAnimationFrame(this.animationFrame);
     window.removeEventListener('resize', this.resize);
+    this.finishLine.dispose();
     this.roadsideFences.dispose();
+    this.highwayScenery.dispose();
     this.textureStore.dispose();
     this.renderer.dispose();
   }
 
   private setupWorld(): void {
-    for (let index = 0; index < 44; index += 1) {
-      const object =
-        index % 6 === 0 ? this.sceneryAssets.createRock() : this.sceneryAssets.createTree();
-      object.userData.slot = index;
-      object.userData.distance = -45 + index * 12.5;
-      object.userData.side = index % 2 === 0 ? -1 : 1;
-      object.userData.offset = GAME.roadWidth / 2 + 6 + ((index * 7) % 10);
-      object.userData.worldPositioned = false;
-      object.rotation.y = (index * 2.39) % (Math.PI * 2);
-      object.scale.setScalar(0.72 + (index % 5) * 0.11);
-      this.scenery.push(object);
-      this.scene.add(object);
-    }
-
     for (let index = 0; index < 4; index += 1) {
       const mountain = this.sceneryAssets.createMountain();
       mountain.userData.slot = index;
@@ -965,7 +1141,7 @@ export class DrivingGame {
     if (!inactive) return;
     inactive.active = true;
     inactive.distance = this.distance + ahead;
-    inactive.lane = Math.floor(Math.random() * 4);
+    inactive.lane = Math.floor(Math.random() * laneOffsets.length);
     inactive.laneOffset = (Math.random() - 0.5) * 1.0;
     inactive.mesh.visible = true;
     inactive.rotationY = 0;
@@ -996,27 +1172,43 @@ export class DrivingGame {
     }
   }
 
-  private async loadCarModels(driverCar: CarModelId, modelCount: number): Promise<void> {
-    if (this.carModelsApplied) return;
-    this.carModelsPromise ??= this.vehicleAssets.loadCarModels(driverCar, modelCount);
-    const available = await this.carModelsPromise;
+  private async loadCarModels(
+    driverCar: CarModelId,
+    modelCount: number,
+    forceRefresh = false,
+  ): Promise<void> {
+    if (
+      !forceRefresh &&
+      this.carModelsApplied &&
+      this.currentAppliedCarId === driverCar &&
+      this.currentAppliedColor === this.driverColor
+    ) {
+      return;
+    }
+    const available = await this.vehicleAssets.loadCarModels(driverCar, modelCount);
     const expectedModelCount = selectCarModelIds(driverCar, modelCount).length;
     if (available.length !== expectedModelCount) {
       throw new Error('One or more selected car models could not be loaded.');
     }
 
-    const playerModel = available.find((model) => model.playerPrototype);
-    if (!playerModel?.playerPrototype) {
+    const playerModel =
+      available.find((model) => model.id === driverCar && model.playerPrototype) ??
+      available.find((model) => model.playerPrototype) ??
+      available.find((model) => model.id === driverCar);
+    if (!playerModel?.playerPrototype && !playerModel?.trafficPrototype) {
       throw new Error('The selected driver car could not be loaded.');
     }
+    const prototype = playerModel.playerPrototype ?? playerModel.trafficPrototype;
     this.vehicleAssets.replaceVisual(
       this.player,
-      playerModel.playerPrototype,
+      prototype,
       true,
       playerModel.id,
       this.driverColor,
     );
     this.attachVehicleLightRig(this.player, true);
+    this.updateVehicleHeadlights(this.player, this.isHeadlightsActive());
+    this.setVehicleBrake(this.player, false);
     const initialCamConfig = CAMERA_CONFIGS[this.cameraMode] ?? CAMERA_CONFIGS[0];
     this.player.visible = initialCamConfig.showCar;
     this.player.traverse((child) => {
@@ -1028,7 +1220,15 @@ export class DrivingGame {
       const model = available[(trafficStart + index) % available.length];
       this.vehicleAssets.replaceVisual(car.mesh, model.trafficPrototype, false, model.id);
       this.attachVehicleLightRig(car.mesh, false);
+      this.updateVehicleHeadlights(
+        car.mesh,
+        this.weatherSystem.getRainIntensity() > 0.04 ||
+          this.weatherSystem.getStormIntensity() > 0.04,
+      );
+      this.setVehicleBrake(car.mesh, false);
     });
+    this.currentAppliedCarId = driverCar;
+    this.currentAppliedColor = this.driverColor;
     this.carModelsApplied = true;
   }
 
@@ -1040,18 +1240,23 @@ export class DrivingGame {
     rigGroup.name = 'vehicle-light-rig';
 
     const flareTex = getLightFlareTexture();
+    const headActive = _isPlayer
+      ? this.isHeadlightsActive()
+      : this.weatherSystem.getRainIntensity() > 0.04 ||
+        this.weatherSystem.getStormIntensity() > 0.04 ||
+        this.weatherSystem.getFogIntensity() > 0.04;
 
     // ── Front Xenon Headlights (shines forward along -Z) ──
     const headLenses: THREE.Mesh[] = [];
     const headFlares: THREE.Mesh[] = [];
-    const headLensMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    const headLensMat = new THREE.MeshBasicMaterial({ color: headActive ? 0xffffff : 0x3a4048 });
     const headFlareMat = new THREE.MeshBasicMaterial({
       map: flareTex,
       color: 0xf5f8ff,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      opacity: 0.88,
+      opacity: headActive ? 0.88 : 0,
     });
 
     const headLensGeom = new THREE.BoxGeometry(0.18, 0.1, 0.08);
@@ -1066,6 +1271,7 @@ export class DrivingGame {
       const flare = new THREE.Mesh(headFlareGeom, headFlareMat);
       flare.position.set(x, 0.58, -2.22);
       flare.rotation.y = Math.PI;
+      flare.visible = headActive;
       rigGroup.add(flare);
       headFlares.push(flare);
     }
@@ -1073,14 +1279,14 @@ export class DrivingGame {
     // ── Rear Ruby Taillights (shines rearward along +Z) ──
     const tailLenses: THREE.Mesh[] = [];
     const tailFlares: THREE.Mesh[] = [];
-    const tailLensMat = new THREE.MeshBasicMaterial({ color: 0xee1622 });
+    const tailLensMat = new THREE.MeshBasicMaterial({ color: headActive ? 0xcc1018 : 0x44080c });
     const tailFlareMat = new THREE.MeshBasicMaterial({
       map: flareTex,
       color: 0xff1e28,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      opacity: 0.72,
+      opacity: headActive ? 0.32 : 0,
     });
 
     const tailLensGeom = new THREE.BoxGeometry(0.2, 0.1, 0.08);
@@ -1094,6 +1300,7 @@ export class DrivingGame {
 
       const flare = new THREE.Mesh(tailFlareGeom, tailFlareMat);
       flare.position.set(x, 0.64, 2.22);
+      flare.visible = headActive;
       rigGroup.add(flare);
       tailFlares.push(flare);
     }
@@ -1108,34 +1315,80 @@ export class DrivingGame {
   }
 
   private setVehicleBrake(carMesh: THREE.Group, braking: boolean): void {
-    this.vehicleAssets.setBrakeLights(carMesh, braking);
+    const isPlayer = carMesh === this.player;
+    const headlightsActive = isPlayer
+      ? this.isHeadlightsActive()
+      : this.weatherSystem.getRainIntensity() > 0.04 ||
+        this.weatherSystem.getStormIntensity() > 0.04 ||
+        this.weatherSystem.getFogIntensity() > 0.04 ||
+        this.weatherSystem.getSnowIntensity() > 0.12;
+
+    this.vehicleAssets.setBrakeLights(carMesh, braking, headlightsActive);
     const rig = carMesh.userData.lightRig as VehicleLightRig | undefined;
     if (rig) {
       const isBadWeather =
         this.weatherSystem.getRainIntensity() > 0.08 ||
         this.weatherSystem.getStormIntensity() > 0.08 ||
         this.weatherSystem.getFogIntensity() > 0.08;
-      const baseOpacity = isBadWeather ? 0.88 : 0.7;
-      const flareOpacity = braking ? 0.98 : baseOpacity;
-      const flareScale = braking ? 1.35 : 1.0;
-      for (const flare of rig.tailFlares) {
-        (flare.material as THREE.MeshBasicMaterial).opacity = flareOpacity;
-        flare.scale.set(flareScale, flareScale, flareScale);
-      }
-      for (const lens of rig.tailLenses) {
-        (lens.material as THREE.MeshBasicMaterial).color.setHex(braking ? 0xff4455 : 0xee1622);
+
+      if (braking) {
+        for (const flare of rig.tailFlares) {
+          flare.visible = true;
+          (flare.material as THREE.MeshBasicMaterial).opacity = 0.98;
+          flare.scale.set(1.35, 1.35, 1.35);
+        }
+        for (const lens of rig.tailLenses) {
+          (lens.material as THREE.MeshBasicMaterial).color.setHex(0xff4455);
+        }
+      } else if (headlightsActive) {
+        const baseOpacity = isBadWeather ? 0.48 : 0.32;
+        for (const flare of rig.tailFlares) {
+          flare.visible = true;
+          (flare.material as THREE.MeshBasicMaterial).opacity = baseOpacity;
+          flare.scale.set(0.85, 0.85, 0.85);
+        }
+        for (const lens of rig.tailLenses) {
+          (lens.material as THREE.MeshBasicMaterial).color.setHex(0xcc1018);
+        }
+      } else {
+        for (const flare of rig.tailFlares) {
+          flare.visible = false;
+          (flare.material as THREE.MeshBasicMaterial).opacity = 0;
+        }
+        for (const lens of rig.tailLenses) {
+          (lens.material as THREE.MeshBasicMaterial).color.setHex(0x44080c);
+        }
       }
     }
   }
 
   private spawnTraffic(car: TrafficCar, ahead?: number, randomizeDirection = false): void {
     if (randomizeDirection) car.direction = Math.random() < 0.56 ? 1 : -1;
+    let candidateLane = car.direction === 1 ? (Math.random() < 0.5 ? 0 : 1) : 2;
+    const minAhead = car.direction === 1 ? 85 : 110;
     const furthest = this.traffic
       .filter((other) => other !== car && other.direction === car.direction)
-      .reduce((max, other) => Math.max(max, other.distance), this.distance + 120);
-    car.distance = ahead ?? furthest + 48 + Math.random() * 95;
-    car.lane = car.direction === 1 ? 0 : 1;
-    car.laneOffset = (Math.random() * 2 - 1) * 1.35;
+      .reduce((max, other) => Math.max(max, other.distance), this.distance + minAhead);
+    let candidateDist = ahead ?? Math.max(this.distance + minAhead, furthest + 38 + Math.random() * 80);
+
+    // Collision buffer: ensure car does not spawn overlapping another car in the same lane
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const conflict = this.traffic.some(
+        (other) =>
+          other !== car &&
+          other.lane === candidateLane &&
+          Math.abs(other.distance - candidateDist) < 32,
+      );
+      if (!conflict) break;
+      if (car.direction === 1) {
+        candidateLane = candidateLane === 0 ? 1 : 0;
+      }
+      candidateDist += 36;
+    }
+
+    car.distance = candidateDist;
+    car.lane = candidateLane;
+    car.laneOffset = (Math.random() * 2 - 1) * 1.25;
 
     car.isRival = false;
     if (car.direction === 1 && Math.random() < 0.15) {
@@ -1246,7 +1499,8 @@ export class DrivingGame {
     );
     const { targetSpeed, acceleration, safetyBraking } = speedPlan;
     this.assistMessage = speedPlan.assistMessage;
-    this.setVehicleBrake(this.player, safetyBraking || control.braking === true);
+    this.isPlayerBraking = safetyBraking || control.braking === true;
+    this.setVehicleBrake(this.player, this.isPlayerBraking);
     this.speed = damp(
       this.speed,
       targetSpeed,
@@ -1255,21 +1509,19 @@ export class DrivingGame {
     );
     if (targetSpeed === 0 && Math.abs(this.speed) < 0.3) this.speed = 0;
 
-    this.steeringVisual = damp(this.steeringVisual, control.steering, 10, dt);
+    this.steeringVisual = damp(this.steeringVisual, control.steering, 20, dt);
 
     // Progressive non-linear steering response curve:
-    // Softens sensitivity near center for effortless lane stabilization, responsive for evasive maneuvers.
-    const progressiveSteer = progressiveSteering(this.steeringVisual, 1.35);
+    // Gentle 1.15 power curve provides solid center-line stability without lag or dead zones.
+    const progressiveSteer = progressiveSteering(this.steeringVisual, 1.15);
 
     // Speed-sensitive steering authority & tire grip dynamics:
-    // At low speed, ramp authority progressively for tight turns.
-    // At high cruising and racing speeds (60 - 240 km/h), speed-sensitive damping stabilizes vehicle heading rate.
-    const lowSpeedRamp = clamp(Math.abs(this.speed) / 7.0, 0.25, 1.0);
-    const gripAuthority = 0.55 + 0.45 * roadCondition.grip;
+    const lowSpeedRamp = clamp(Math.abs(this.speed) / 6.0, 0.35, 1.0);
+    const gripAuthority = 0.65 + 0.35 * roadCondition.grip;
     let effectiveTurnRate = speedSensitiveSteering(
       progressiveSteer,
       Math.abs(this.speed),
-      0.82 * lowSpeedRamp * gripAuthority,
+      0.95 * lowSpeedRamp * gripAuthority,
     );
 
     // Lateral tire load & slip:
@@ -1286,6 +1538,20 @@ export class DrivingGame {
       this.assistMessage = '❄️ BLACK ICE SLIP · COUNTER-STEER';
     }
 
+    const currentRoadHeading = roadHeading(this.distance);
+    const headingDiff = Math.atan2(
+      Math.sin(currentRoadHeading - this.vehicleHeading),
+      Math.cos(currentRoadHeading - this.vehicleHeading),
+    );
+
+    // Natural caster self-aligning torque:
+    // When the driver holds neutral/gentle steering, vehicle heading stabilizes along highway curves.
+    // When the driver turns firmly for an evasive lane change, alignment yields 100% authority to the player.
+    if (Math.abs(this.speed) > 1.0) {
+      const alignTorque = (1.0 - Math.min(1.0, Math.abs(this.steeringVisual) * 1.3)) * 3.2;
+      this.vehicleHeading += headingDiff * alignTorque * dt;
+    }
+
     this.vehicleHeading -= effectiveTurnRate * dt;
 
     // Lateral drift from tire slip on wet/flooded/icy asphalt:
@@ -1293,12 +1559,12 @@ export class DrivingGame {
     this.worldX += (-Math.sin(this.vehicleHeading) * this.speed + slipDrift) * dt;
     this.distance += Math.cos(this.vehicleHeading - roadHeading(this.distance)) * this.speed * dt;
 
-    const currentRoadHeading = roadHeading(this.distance);
+    const roadHeadingAtDistance = roadHeading(this.distance);
     const currentRoadCenter = roadCenter(this.distance);
     const roadConstraint = constrainToRoad(
       this.worldX,
       currentRoadCenter,
-      currentRoadHeading,
+      roadHeadingAtDistance,
       GAME.roadWidth,
       GAME.roadEdgeMargin,
     );
@@ -1376,6 +1642,7 @@ export class DrivingGame {
   }
 
   private updateWorld(dt: number): void {
+    proceduralTrack.update(this.distance);
     this.roadUpdateElapsed += dt;
     const roadJumped =
       !Number.isFinite(this.lastRoadUpdateDistance) ||
@@ -1389,36 +1656,60 @@ export class DrivingGame {
       this.roadUpdateElapsed = 0;
     }
     this.roadsideFences.update(this.distance);
+    this.highwayScenery.update(this.distance);
 
     const centerX = roadCenter(this.distance);
-    this.player.position.set(this.worldX, 0.02, -this.distance);
-    this.player.rotation.y = this.vehicleHeading;
-    this.player.rotation.z = damp(this.player.rotation.z, -this.steeringVisual * 0.06, 6, dt);
+    const playerElevation = roadElevation(this.distance);
+    const playerPitch = roadPitch(this.distance);
+    this.player.position.set(this.worldX, playerElevation + 0.02, -this.distance);
+    this.player.rotation.set(
+      -playerPitch,
+      this.vehicleHeading,
+      damp(this.player.rotation.z, -this.steeringVisual * 0.06, 6, dt),
+    );
     this.vehicleAssets.updateWheelAnimation(this.player, this.speed * dt, this.steeringVisual, dt);
 
-    this.headlightBeam.position.set(this.worldX, 0.038, -this.distance);
-    this.headlightBeam.rotation.y = this.vehicleHeading;
-    const wetness = this.weatherSystem.getRoadWetness();
-    const isBadWeather =
-      this.weatherSystem.getRainIntensity() > 0.05 ||
-      this.weatherSystem.getStormIntensity() > 0.05 ||
-      this.weatherSystem.getFogIntensity() > 0.05;
-    const beamMat = this.headlightBeam.material as THREE.MeshBasicMaterial;
-    beamMat.opacity = isBadWeather ? 0.72 + wetness * 0.22 : 0.52;
+    const headlightsActive = this.isHeadlightsActive();
+    this.headlightBeam.visible = headlightsActive;
+    if (headlightsActive) {
+      this.headlightBeam.position.set(this.worldX, playerElevation + 0.038, -this.distance);
+      this.headlightBeam.rotation.set(-playerPitch, this.vehicleHeading, 0);
+      const wetness = this.weatherSystem.getRoadWetness();
+      const isBadWeather =
+        this.weatherSystem.getRainIntensity() > 0.05 ||
+        this.weatherSystem.getStormIntensity() > 0.05 ||
+        this.weatherSystem.getFogIntensity() > 0.05;
+      const beamMat = this.headlightBeam.material as THREE.MeshBasicMaterial;
+      beamMat.opacity = isBadWeather ? 0.72 + wetness * 0.22 : 0.58;
+    }
+    this.updateVehicleHeadlights(this.player, headlightsActive);
+
+    const trafficHeadlightsActive =
+      this.weatherSystem.getRainIntensity() > 0.04 ||
+      this.weatherSystem.getStormIntensity() > 0.04 ||
+      this.weatherSystem.getFogIntensity() > 0.04 ||
+      this.weatherSystem.getSnowIntensity() > 0.12;
 
     for (const car of this.traffic) {
       const gap = car.distance - this.distance;
       const visible = gap > -90 && gap < GAME.lookAhead + 80;
       car.mesh.visible = visible;
       if (!visible) continue;
+      this.updateVehicleHeadlights(car.mesh, trafficHeadlightsActive);
       const carHeading = roadHeading(car.distance);
+      const carElevation = roadElevation(car.distance);
+      const carPitch = roadPitch(car.distance);
       const offset = laneOffsets[car.lane] + car.laneOffset;
       car.mesh.position.set(
         roadCenter(car.distance) + Math.cos(carHeading) * offset,
-        0.02,
+        carElevation + 0.02,
         -car.distance - Math.sin(carHeading) * offset,
       );
-      car.mesh.rotation.y = carHeading + (car.direction === -1 ? Math.PI : 0);
+      car.mesh.rotation.set(
+        -carPitch * car.direction,
+        carHeading + (car.direction === -1 ? Math.PI : 0),
+        0,
+      );
       const detailDistance = Math.abs(gap);
       this.vehicleAssets.setShadowCasting(car.mesh, detailDistance < 65);
       if (detailDistance < 70) {
@@ -1426,25 +1717,7 @@ export class DrivingGame {
       }
     }
 
-    for (const object of this.scenery) {
-      let distance = object.userData.distance as number;
-      let needsPosition = object.userData.worldPositioned !== true;
-      if (distance < this.distance - 70) {
-        distance += this.scenery.length * 12.5;
-        object.userData.distance = distance;
-        needsPosition = true;
-      }
-      if (needsPosition) {
-        const headingAtObject = roadHeading(distance);
-        const offset = (object.userData.side as number) * (object.userData.offset as number);
-        object.position.set(
-          roadCenter(distance) + Math.cos(headingAtObject) * offset,
-          0,
-          -distance - Math.sin(headingAtObject) * offset,
-        );
-        object.userData.worldPositioned = true;
-      }
-    }
+    this.highwayScenery.update(this.distance);
 
     for (const item of this.interactables) {
       if (!item.active) continue;
@@ -1454,12 +1727,15 @@ export class DrivingGame {
       if (!visible) continue;
 
       const itemHeading = roadHeading(item.distance);
+      const itemElevation = roadElevation(item.distance);
+      const itemPitch = roadPitch(item.distance);
       const offset = laneOffsets[item.lane] + item.laneOffset;
       item.mesh.position.set(
         roadCenter(item.distance) + Math.cos(itemHeading) * offset,
-        0.5,
+        itemElevation + 0.5,
         -item.distance - Math.sin(itemHeading) * offset,
       );
+      item.mesh.rotation.x = -itemPitch;
       if (item.type === 'coin' || item.type === 'nitro') {
         item.rotationY += dt * 3;
         item.mesh.rotation.y = itemHeading + item.rotationY;
@@ -1562,7 +1838,7 @@ export class DrivingGame {
     this.desiredCamera
       .copy(this.player.position)
       .addScaledVector(this.forward, -camConfig.camBack + surgeOffset);
-    this.desiredCamera.y = camConfig.camHeight + collisionJoltY;
+    this.desiredCamera.y = this.player.position.y + camConfig.camHeight + collisionJoltY;
 
     // Stable road vibration at high speed (avoiding excessive shaking)
     const speedRatio = clamp(this.speed / gearMaxSpeed, 0, 1);
@@ -1581,7 +1857,7 @@ export class DrivingGame {
 
     // Look directly ahead toward target
     this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, camConfig.lookAhead);
-    this.cameraTarget.y = camConfig.lookHeight + pitchOffset;
+    this.cameraTarget.y = this.player.position.y + camConfig.lookHeight + pitchOffset;
     this.camera.lookAt(this.cameraTarget);
 
     // Subtle lateral G-force body roll on steering turns
@@ -1600,6 +1876,7 @@ export class DrivingGame {
       this.vehicleHeading,
       this.camera.position,
       this.player.position,
+      this.isHeadlightsActive(),
     );
     this.windshieldOverlay.update(
       dt,
@@ -1616,26 +1893,134 @@ export class DrivingGame {
     }
   }
 
+  private triggerFinishLineCrossed(reachedEnd = true): void {
+    if (this.isFinishingSequence) return;
+    this.isFinishingSequence = true;
+    this.phase = 'finishing';
+    this.finishEaseTimer = 0;
+    if (reachedEnd) {
+      this.finishLine.triggerVictoryConfetti(this.player.position);
+      this.assistMessage = '🏁 FINISH LINE CROSSED!';
+    } else {
+      this.assistMessage = '⏱️ TIME EXPIRED';
+    }
+  }
+
+  private emitRaceResult(): void {
+    if (this.finishResultEmitted) return;
+    this.finishResultEmitted = true;
+
+    const position = this.getRivalPosition();
+    let won = false;
+    if (this.currentRaceMode === 'rival_race') {
+      won = position === 1;
+    } else if (this.currentRaceMode === 'time_attack') {
+      won = this.timeLimitSeconds === null || this.raceTimeSeconds <= this.timeLimitSeconds;
+    } else if (this.currentRaceMode === 'traffic_challenge') {
+      won = this.overtakes >= 12 && this.health >= 50;
+    } else if (this.currentRaceMode === 'championship') {
+      won = position === 1;
+    } else {
+      won = true; // Endless highway completion
+    }
+
+    const result: RaceResult = {
+      won,
+      finishPosition: position,
+      completionTimeSeconds: Number(this.raceTimeSeconds.toFixed(2)),
+      distanceMeters: Math.round(this.distance),
+      maxSpeedKph: Math.round(this.speed * 3.6),
+      overtakes: this.overtakes,
+      score: Math.floor(this.distance + this.overtakes * 250) + this.bonusScore,
+      health: this.health,
+      mode: this.currentRaceMode,
+    };
+
+    this.onFinishCallback?.(result);
+  }
+
   private animate = (): void => {
     this.animationFrame = requestAnimationFrame(this.animate);
     const frameSeconds = this.clock.getDelta();
     const dt = Math.min(frameSeconds, 0.05);
     const now = performance.now();
-    const playing = this.phase === 'playing';
-    if (!playing && now - this.lastIdleRender < IDLE_RENDER_INTERVAL_MS) return;
-    if (playing) this.updateSimulation(dt);
+
+    const isRacingPhase =
+      this.phase === 'playing' ||
+      this.phase === 'racing' ||
+      this.phase === 'final_approach' ||
+      this.phase === 'finishing';
+    const isLive = isRacingPhase || this.phase === 'countdown';
+
+    if (!isLive && now - this.lastIdleRender < IDLE_RENDER_INTERVAL_MS) return;
+
+    if (this.phase === 'countdown') {
+      this.countdownTimer -= dt;
+      if (this.countdownTimer > 2.0) this.countdownValue = 3;
+      else if (this.countdownTimer > 1.0) this.countdownValue = 2;
+      else if (this.countdownTimer > 0.0) this.countdownValue = 1;
+      else this.countdownValue = 0;
+
+      if (this.countdownValue !== this.lastBeepValue) {
+        this.lastBeepValue = this.countdownValue;
+        this.onCountdownBeepCallback?.(this.countdownValue === 0);
+      }
+
+      if (this.countdownTimer <= -0.45) {
+        this.phase = 'racing';
+        this.countdownValue = null;
+        this.assistMessage = 'GO! RACE ACTIVE';
+      }
+    } else if (
+      this.phase === 'racing' ||
+      this.phase === 'final_approach' ||
+      this.phase === 'playing'
+    ) {
+      this.raceTimeSeconds += dt;
+      if (this.timeLimitSeconds && this.raceTimeSeconds >= this.timeLimitSeconds) {
+        this.triggerFinishLineCrossed(false);
+      } else if (this.finishDistance !== null) {
+        const remaining = this.finishDistance - this.distance;
+        if (remaining <= 0) {
+          this.triggerFinishLineCrossed(true);
+        } else if (remaining <= 120) {
+          this.approachWarning = 'FINAL SPRINT · 100M';
+          this.phase = 'final_approach';
+        } else if (remaining <= 220) {
+          this.approachWarning = 'CHECKPOINT · 200M';
+        } else if (remaining <= 320) {
+          this.approachWarning = 'APPROACHING · 300M';
+        } else if (remaining <= 520) {
+          this.approachWarning = 'APPROACHING · 500M';
+        } else {
+          this.approachWarning = null;
+        }
+      }
+      this.updateSimulation(dt);
+    } else if (this.phase === 'finishing') {
+      this.speed = damp(this.speed, 0, 1.8, dt);
+      this.distance += this.speed * dt;
+      this.finishEaseTimer += dt;
+      this.updateSimulation(dt);
+      if (this.finishEaseTimer >= 2.2) {
+        this.phase = 'results';
+        this.emitRaceResult();
+      }
+    }
+
     this.updateWorld(dt);
+    this.finishLine.update(dt);
+
     let qualitySettings = this.pendingRenderQuality;
     this.pendingRenderQuality = undefined;
-    if (playing && this.graphicsQualityMode === 'auto') {
+    if (isRacingPhase && this.graphicsQualityMode === 'auto') {
       const settings = this.adaptiveQuality.recordFrame(frameSeconds);
       if (settings) qualitySettings = settings;
     }
     if (qualitySettings) this.applyRenderQuality(qualitySettings);
-    // Quality changes resize and clear the WebGL drawing buffer. Rendering
-    // afterward fills it in the same animation frame and prevents a black flash.
     this.renderer.render(this.scene, this.camera);
-    if (this.performanceMonitoring && playing) {
+
+    if (this.performanceMonitoring && isRacingPhase) {
       const render = this.renderer.info.render;
       const memory = this.renderer.info.memory;
       const snapshot = this.performanceMonitor.recordFrame(
@@ -1650,7 +2035,7 @@ export class DrivingGame {
       );
       if (snapshot) this.onPerformanceUpdate(snapshot);
     }
-    if (!playing) this.lastIdleRender = now;
+    if (!isLive) this.lastIdleRender = now;
 
     if (now - this.lastSnapshot > 80) {
       this.lastSnapshot = now;
@@ -1675,6 +2060,16 @@ export class DrivingGame {
         gearMaxKph: GEAR_SPECS[this.currentGear - 1].maxSpeedKph,
         radar: this.getRadarTelemetry(),
         roadCondition: this.weatherSystem.getRoadCondition(this.speed * 3.6, this.tireSlip),
+        headlightMode: this.headlightMode,
+        headlightsActive: this.isHeadlightsActive(),
+        raceTimeSeconds: this.raceTimeSeconds,
+        distanceRemaining:
+          this.finishDistance !== null ? Math.max(0, this.finishDistance - this.distance) : null,
+        finishDistance: this.finishDistance,
+        position: this.getRivalPosition(),
+        countdownValue: this.countdownValue,
+        approachWarning: this.approachWarning,
+        raceModeName: this.currentRaceMode,
       });
     }
   };

@@ -870,4 +870,93 @@ export class EngineSound {
     osc1.stop(start + duration + 0.05);
     osc2.stop(start + duration + 0.05);
   }
+
+  playCountdownBeep(isGo: boolean): void {
+    if (!this.enabled || !this.context || !this.masterGain) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+    const osc = this.context.createOscillator();
+    const gain = this.context.createGain();
+
+    osc.type = isGo ? 'triangle' : 'sine';
+    const freq = isGo ? 880 : 440; // High A5 on GO, A4 on 3-2-1
+    osc.frequency.setValueAtTime(freq, now);
+    if (isGo) {
+      osc.frequency.exponentialRampToValueAtTime(1174.66, now + 0.18); // D6 pitch lift
+    }
+
+    const duration = isGo ? 0.35 : 0.18;
+    const vol = Math.min(0.25, 0.22 * this.masterVolume);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    osc.connect(gain);
+    gain.connect(this.masterGain);
+    osc.start(now);
+    osc.stop(now + duration + 0.05);
+  }
+
+  playFinishChime(victory: boolean): void {
+    if (!this.enabled || !this.context || !this.masterGain) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+    const notes = victory
+      ? [523.25, 659.25, 783.99, 1046.5] // C5, E5, G5, C6 triumphant chord
+      : [440.0, 392.0, 349.23]; // A4, G4, F4 completion chord
+
+    notes.forEach((freq, idx) => {
+      const osc = this.context!.createOscillator();
+      const gain = this.context!.createGain();
+      const startTime = now + idx * 0.1;
+      const duration = 0.6;
+      osc.type = victory ? 'triangle' : 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.001, startTime);
+      gain.gain.linearRampToValueAtTime(0.18 * this.masterVolume, startTime + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.05);
+    });
+  }
+
+  playMedalChime(): void {
+    if (!this.enabled || !this.context || !this.masterGain) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+    [587.33, 880.0, 1174.66].forEach((freq, idx) => {
+      const osc = this.context!.createOscillator();
+      const gain = this.context!.createGain();
+      const startTime = now + idx * 0.12;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.16 * this.masterVolume, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.5);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(startTime);
+      osc.stop(startTime + 0.55);
+    });
+  }
+
+  playObjectiveComplete(): void {
+    if (!this.enabled || !this.context || !this.masterGain) return;
+    if (this.context.state === 'suspended') void this.context.resume();
+    const now = this.context.currentTime;
+    [659.25, 987.77].forEach((freq, idx) => {
+      const osc = this.context!.createOscillator();
+      const gain = this.context!.createGain();
+      const startTime = now + idx * 0.09;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime);
+      gain.gain.setValueAtTime(0.15 * this.masterVolume, startTime);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.3);
+      osc.connect(gain);
+      gain.connect(this.masterGain!);
+      osc.start(startTime);
+      osc.stop(startTime + 0.35);
+    });
+  }
 }
+
