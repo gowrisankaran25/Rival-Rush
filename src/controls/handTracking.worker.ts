@@ -29,7 +29,12 @@ workerScope.onmessage = (event): void => {
   if (message.type === 'init') {
     void (async () => {
       try {
-        const vision = await FilesetResolver.forVisionTasks(message.wasmRoot, true);
+        let vision: Awaited<ReturnType<typeof FilesetResolver.forVisionTasks>>;
+        try {
+          vision = await FilesetResolver.forVisionTasks(message.wasmRoot);
+        } catch {
+          vision = await FilesetResolver.forVisionTasks(message.wasmRoot, true);
+        }
         let landmarkerInstance: HandLandmarker;
         try {
           landmarkerInstance = await HandLandmarker.createFromOptions(vision, {

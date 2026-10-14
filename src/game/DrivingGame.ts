@@ -2198,12 +2198,13 @@ export class DrivingGame {
     this.finishLine.update(dt);
 
     let qualitySettings = this.pendingRenderQuality;
+    const isManualSettingsChange = Boolean(this.pendingRenderQuality);
     this.pendingRenderQuality = undefined;
     if (isRacingPhase && this.graphicsQualityMode === 'auto') {
       const settings = this.adaptiveQuality.recordFrame(frameSeconds);
       if (settings) qualitySettings = settings;
     }
-    if (qualitySettings) this.applyRenderQuality(qualitySettings);
+    if (qualitySettings) this.applyRenderQuality(qualitySettings, isManualSettingsChange);
     this.renderer.render(this.scene, this.camera);
 
     if (this.performanceMonitoring && isRacingPhase) {
@@ -2270,13 +2271,18 @@ export class DrivingGame {
     this.renderer.setSize(width, height, false);
   };
 
-  private applyRenderQuality(settings: RenderQualitySettings): void {
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, settings.pixelRatioCap));
-    const shadow = this.lighting.sun.shadow;
-    if (shadow.mapSize.x !== settings.shadowMapSize) {
-      shadow.mapSize.set(settings.shadowMapSize, settings.shadowMapSize);
-      shadow.map?.dispose();
-      shadow.map = null;
+  private applyRenderQuality(settings: RenderQualitySettings, forceShadowMap = false): void {
+    const targetPixelRatio = Math.min(window.devicePixelRatio, settings.pixelRatioCap);
+    if (Math.abs(this.renderer.getPixelRatio() - targetPixelRatio) > 0.05) {
+      this.renderer.setPixelRatio(targetPixelRatio);
+    }
+    if (forceShadowMap) {
+      const shadow = this.lighting.sun.shadow;
+      if (shadow.mapSize.x !== settings.shadowMapSize) {
+        shadow.mapSize.set(settings.shadowMapSize, settings.shadowMapSize);
+        shadow.map?.dispose();
+        shadow.map = null;
+      }
     }
   }
 
