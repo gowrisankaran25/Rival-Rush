@@ -109,6 +109,7 @@ export interface GameSnapshot {
   headlightMode?: HeadlightMode;
   headlightsActive?: boolean;
   raceTimeSeconds?: number;
+  timeLimitSeconds?: number | null;
   distanceRemaining?: number | null;
   finishDistance?: number | null;
   position?: number;

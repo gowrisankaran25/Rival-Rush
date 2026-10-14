@@ -78,7 +78,26 @@ export class GameHud {
 
     // Race timer
     if (this.raceTimer && snapshot.raceTimeSeconds !== undefined) {
-      this.raceTimer.textContent = formatTimer(snapshot.raceTimeSeconds);
+      if (snapshot.timeLimitSeconds) {
+        const remaining = Math.max(0, snapshot.timeLimitSeconds - snapshot.raceTimeSeconds);
+        this.raceTimer.textContent = formatTimer(remaining);
+        const timerLabel = this.raceTimer.parentElement?.querySelector('small');
+        if (timerLabel && timerLabel.textContent !== 'TIME REMAINING') {
+          timerLabel.textContent = 'TIME REMAINING';
+        }
+        if (remaining <= 10) {
+          this.raceTimer.style.color = '#ff4d4d';
+        } else {
+          this.raceTimer.style.color = '';
+        }
+      } else {
+        this.raceTimer.textContent = formatTimer(snapshot.raceTimeSeconds);
+        const timerLabel = this.raceTimer.parentElement?.querySelector('small');
+        if (timerLabel && timerLabel.textContent !== 'RACE TIMER') {
+          timerLabel.textContent = 'RACE TIMER';
+        }
+        this.raceTimer.style.color = '';
+      }
     }
 
     // Distance remaining

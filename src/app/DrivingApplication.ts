@@ -166,8 +166,8 @@ export class DrivingApplication {
     if (!isGaming) {
       this.hud.hide();
       this.radarHud.hide();
-      if (this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing') {
-        this.game.pause();
+      if (this.isGameActivePhase()) {
+        this.game?.pause();
       }
       this.audio.setPlaying(false);
       if (viewId !== 'calibrate') {
@@ -1278,7 +1278,7 @@ export class DrivingApplication {
   private togglePause(): void {
     if (!this.game) return;
     const phase = this.game.getPhase();
-    if (phase === 'playing' || phase === 'racing') {
+    if (this.isGameActivePhase()) {
       this.game.pause();
       this.audio.setPlaying(false);
       this.pauseButton.textContent = 'RESUME';
@@ -1451,10 +1451,19 @@ export class DrivingApplication {
     else if (this.currentView === 'game') this.pauseButton.click();
   }
 
+  private isGameActivePhase(): boolean {
+    const phase = this.game?.getPhase();
+    return (
+      phase === 'playing' ||
+      phase === 'racing' ||
+      phase === 'final_approach' ||
+      phase === 'countdown'
+    );
+  }
+
   private openGraphicsSettings(): void {
     if (this.graphicsSettings.isOpen()) return;
-    this.resumeAfterGraphics =
-      this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing';
+    this.resumeAfterGraphics = this.isGameActivePhase();
     if (this.resumeAfterGraphics) {
       this.game?.pause();
       this.audio.setPlaying(false);
@@ -1476,8 +1485,7 @@ export class DrivingApplication {
 
   private openSoundSettings(): void {
     if (this.soundSettings.isOpen()) return;
-    this.resumeAfterSound =
-      this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing';
+    this.resumeAfterSound = this.isGameActivePhase();
     if (this.resumeAfterSound) {
       this.game?.pause();
       this.audio.setPlaying(false);

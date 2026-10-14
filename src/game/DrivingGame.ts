@@ -429,6 +429,7 @@ export class DrivingGame {
   private finishDistance: number | null = null;
   private timeLimitSeconds: number | null = null;
   private raceTimeSeconds = 0;
+  private pausedPhase: GamePhase = 'racing';
   private countdownTimer = 0;
   private countdownValue: number | null = null;
   private lastBeepValue: number | null = null;
@@ -633,6 +634,11 @@ export class DrivingGame {
     this.timeLimitSeconds = config.timeLimitSeconds;
     this.hasRival = config.hasRival;
     this.finishLine.setFinishDistance(this.finishDistance);
+    this.raceTimeSeconds = 0;
+    this.isFinishingSequence = false;
+    this.finishResultEmitted = false;
+    this.finishEaseTimer = 0;
+    this.approachWarning = null;
 
     this.setTrafficCount(config.defaultTrafficCount);
 
@@ -676,6 +682,11 @@ export class DrivingGame {
     this.countdownTimer = 1.6;
     this.countdownValue = 3;
     this.lastBeepValue = null;
+    this.raceTimeSeconds = 0;
+    this.isFinishingSequence = false;
+    this.finishResultEmitted = false;
+    this.finishEaseTimer = 0;
+    this.approachWarning = null;
     this.clock.getDelta();
   }
 
@@ -981,7 +992,13 @@ export class DrivingGame {
   }
 
   pause(): void {
-    if (this.phase === 'playing') {
+    if (
+      this.phase === 'playing' ||
+      this.phase === 'racing' ||
+      this.phase === 'final_approach' ||
+      this.phase === 'countdown'
+    ) {
+      this.pausedPhase = this.phase;
       this.phase = 'paused';
       this.assistMessage = 'PAUSED';
     }
@@ -989,7 +1006,7 @@ export class DrivingGame {
 
   resume(): void {
     if (this.phase === 'paused') {
-      this.phase = 'playing';
+      this.phase = this.pausedPhase;
       this.clock.getDelta();
     }
   }
@@ -1006,6 +1023,7 @@ export class DrivingGame {
     // 2. Position player in the exact center lane of the road at distance 0
     this.distance = 0;
     this.speed = 0;
+    this.raceTimeSeconds = 0;
     this.health = 100;
     this.collisionCooldown = 0;
     this.bonusScore = 0;
@@ -2156,6 +2174,8 @@ export class DrivingGame {
         this.phase = 'racing';
         this.countdownValue = null;
         this.assistMessage = 'GO! RACE ACTIVE';
+        this.raceTimeSeconds = 0;
+        this.clock.getDelta();
       }
     } else if (
       this.phase === 'racing' ||
@@ -2251,6 +2271,7 @@ export class DrivingGame {
         headlightMode: this.headlightMode,
         headlightsActive: this.isHeadlightsActive(),
         raceTimeSeconds: this.raceTimeSeconds,
+        timeLimitSeconds: this.timeLimitSeconds,
         distanceRemaining:
           this.finishDistance !== null ? Math.max(0, this.finishDistance - this.distance) : null,
         finishDistance: this.finishDistance,
