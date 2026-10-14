@@ -1,9 +1,5 @@
 export type RaceModeId =
-  | 'endless'
-  | 'time_attack'
-  | 'rival_race'
-  | 'traffic_challenge'
-  | 'championship';
+  'endless' | 'time_attack' | 'rival_race' | 'traffic_challenge' | 'championship';
 
 export interface RaceModeConfig {
   id: RaceModeId;
@@ -32,7 +28,8 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     name: 'ENDLESS HIGHWAY',
     tagline: 'SURVIVE THE OPEN ROAD',
     category: 'SURVIVAL RUN',
-    description: 'Open-throttle highway survival. Weave through dynamic traffic, chain overtakes for score multipliers, and conquer personal distance records.',
+    description:
+      'Open-throttle highway survival. Weave through dynamic traffic, chain overtakes for score multipliers, and conquer personal distance records.',
     distanceMeters: null,
     timeLimitSeconds: null,
     targetOvertakes: null,
@@ -55,7 +52,8 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     name: 'TIME ATTACK',
     tagline: 'RACE AGAINST THE CLOCK',
     category: 'SPRINT TRIAL',
-    description: 'A blisteringly fast 2,500m sprint course against a strict countdown timer. Precision cornering and gear shifting are required to take Gold.',
+    description:
+      'A blisteringly fast 2,500m sprint course against a strict countdown timer. Precision cornering and gear shifting are required to take Gold.',
     distanceMeters: 2500,
     timeLimitSeconds: 60,
     targetOvertakes: null,
@@ -78,7 +76,8 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     name: 'RIVAL RACE',
     tagline: 'WHEEL-TO-WHEEL SHOWDOWN',
     category: 'HEAD-TO-HEAD',
-    description: 'Go bumper-to-bumper across 2,000 meters against an elite AI competitor in a tuned supercar. Take the lead and cross the line 1st for glory.',
+    description:
+      'Go bumper-to-bumper across 2,000 meters against an elite AI competitor in a tuned supercar. Take the lead and cross the line 1st for glory.',
     distanceMeters: 2000,
     timeLimitSeconds: 70,
     targetOvertakes: null,
@@ -102,7 +101,8 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     name: 'TRAFFIC CHALLENGE',
     tagline: 'PRECISION OVERTAKE GAUNTLET',
     category: 'TECHNICAL GAUNTLET',
-    description: 'High-density highway traffic gauntlet over 2,200 meters. Test your hand-eye coordination with rapid lane changes and clean overtaking streaks.',
+    description:
+      'High-density highway traffic gauntlet over 2,200 meters. Test your hand-eye coordination with rapid lane changes and clean overtaking streaks.',
     distanceMeters: 2200,
     timeLimitSeconds: null,
     targetOvertakes: 12,
@@ -125,7 +125,8 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     name: 'CHAMPIONSHIP TOUR',
     tagline: 'THREE-STAGE GRAND PRIX',
     category: 'TOURNAMENT CUP',
-    description: 'The ultimate Rival Rush racing cup. Complete 3 sequential stages: Stage 1 Time Trial, Stage 2 Traffic Gauntlet, and Stage 3 Rival Grand Finale.',
+    description:
+      'The ultimate Rival Rush racing cup. Complete 3 sequential stages: Stage 1 Time Trial, Stage 2 Traffic Gauntlet, and Stage 3 Rival Grand Finale.',
     distanceMeters: 2500,
     timeLimitSeconds: 65,
     targetOvertakes: 10,

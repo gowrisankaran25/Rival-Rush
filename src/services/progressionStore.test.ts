@@ -20,7 +20,8 @@ class LocalStorageMock {
 }
 
 if (typeof globalThis.localStorage === 'undefined') {
-  (globalThis as unknown as { localStorage: LocalStorageMock }).localStorage = new LocalStorageMock();
+  (globalThis as unknown as { localStorage: LocalStorageMock }).localStorage =
+    new LocalStorageMock();
 }
 
 describe('ProgressionStore', () => {

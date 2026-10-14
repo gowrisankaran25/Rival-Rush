@@ -19,19 +19,9 @@ function smootherstep(u: number): number {
  * 6. 'scenic': Scenic highway with rich roadside vistas, billboards, and skyline formations.
  */
 export type RoadSegmentType =
-  | 'straight'
-  | 'gentle_left'
-  | 'gentle_right'
-  | 'bridge'
-  | 'tunnel'
-  | 'scenic';
+  'straight' | 'gentle_left' | 'gentle_right' | 'bridge' | 'tunnel' | 'scenic';
 
-export type SceneryTheme =
-  | 'urban'
-  | 'foothills'
-  | 'viaduct'
-  | 'tunnel'
-  | 'scenic_vista';
+export type SceneryTheme = 'urban' | 'foothills' | 'viaduct' | 'tunnel' | 'scenic_vista';
 
 export interface RoadSegment {
   readonly id: number;
@@ -186,10 +176,7 @@ export class ProceduralTrackSystem {
 
     // 2. Prune retired segments completely behind the player window
     const pruneThreshold = playerDistance - PRUNE_BEHIND_DISTANCE;
-    while (
-      this.activeSegments.length > 3 &&
-      this.activeSegments[0].endDist < pruneThreshold
-    ) {
+    while (this.activeSegments.length > 3 && this.activeSegments[0].endDist < pruneThreshold) {
       this.activeSegments.shift();
     }
 
@@ -283,7 +270,10 @@ export class ProceduralTrackSystem {
    */
   getPitch(distance: number): number {
     const step = 0.5;
-    return Math.atan2(this.getElevation(distance + step) - this.getElevation(distance - step), step * 2);
+    return Math.atan2(
+      this.getElevation(distance + step) - this.getElevation(distance - step),
+      step * 2,
+    );
   }
 
   /**
@@ -291,7 +281,10 @@ export class ProceduralTrackSystem {
    */
   getHeading(distance: number): number {
     const step = 0.5;
-    return Math.atan2(-(this.getCenter(distance + step) - this.getCenter(distance - step)), step * 2);
+    return Math.atan2(
+      -(this.getCenter(distance + step) - this.getCenter(distance - step)),
+      step * 2,
+    );
   }
 
   /**

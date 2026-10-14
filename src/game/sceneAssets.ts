@@ -68,7 +68,8 @@ export class SurfaceTextureStore {
     const textureRoot = options.textureRoot ?? 'roads/textures';
     const surfaceMap = this.load(metallicRoughness, false, repeatX, repeatY, textureRoot);
     const map =
-      options.customMap ?? (baseColor ? this.load(baseColor, true, repeatX, repeatY, textureRoot) : null);
+      options.customMap ??
+      (baseColor ? this.load(baseColor, true, repeatX, repeatY, textureRoot) : null);
     return new THREE.MeshStandardMaterial({
       color: options.tint ?? 0xffffff,
       map,

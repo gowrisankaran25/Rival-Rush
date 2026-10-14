@@ -88,7 +88,11 @@ export class HighwayScenerySystem {
             );
           }
           if (markerIdx < this.markers.length) {
-            this.placeMesh(this.markers[markerIdx++], seg.startDist + 35, GAME.roadWidth * 0.5 + 2.5);
+            this.placeMesh(
+              this.markers[markerIdx++],
+              seg.startDist + 35,
+              GAME.roadWidth * 0.5 + 2.5,
+            );
           }
           break;
 
@@ -151,7 +155,11 @@ export class HighwayScenerySystem {
             );
           }
           if (markerIdx < this.markers.length) {
-            this.placeMesh(this.markers[markerIdx++], seg.startDist + 25, -(GAME.roadWidth * 0.5 + 2.5));
+            this.placeMesh(
+              this.markers[markerIdx++],
+              seg.startDist + 25,
+              -(GAME.roadWidth * 0.5 + 2.5),
+            );
           }
           break;
 
@@ -184,7 +192,14 @@ export class HighwayScenerySystem {
 
         case 'scenic':
           if (skylineIdx < this.skylines.length) {
-            this.placeMesh(this.skylines[skylineIdx++], seg.startDist + 80, 125, Math.PI, -2, false);
+            this.placeMesh(
+              this.skylines[skylineIdx++],
+              seg.startDist + 80,
+              125,
+              Math.PI,
+              -2,
+              false,
+            );
           }
           if (skylineIdx < this.skylines.length) {
             this.placeMesh(this.skylines[skylineIdx++], seg.startDist + 160, -135, 0, -2, false);
@@ -314,11 +329,7 @@ export class HighwayScenerySystem {
     const sideX = Math.cos(heading);
     const sideZ = -Math.sin(heading);
 
-    mesh.position.set(
-      center + sideX * offset,
-      elevation + baseY,
-      -dist + sideZ * offset,
-    );
+    mesh.position.set(center + sideX * offset, elevation + baseY, -dist + sideZ * offset);
     mesh.rotation.set(-pitch, heading + rotY, 0);
     mesh.visible = true;
   }

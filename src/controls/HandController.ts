@@ -17,7 +17,8 @@ import type { HandTrackingResult, HandWorkerInput, HandWorkerOutput } from './ha
 type TrackingStatus = 'idle' | 'loading' | 'ready' | 'calibrating' | 'tracking' | 'lost' | 'error';
 const INFERENCE_INTERVAL_MS = 1000 / 30;
 const PREVIEW_INTERVAL_MS = 1000 / 30;
-const DROPOUT_GRACE_MS = 280;
+const DROPOUT_GRACE_MS = 1200;
+const CALIBRATION_FRAMES = 10;
 const HAND_POINT_COLORS = [
   '#ecff76',
   '#ffb866',
@@ -82,7 +83,7 @@ export class HandController {
     this.setStatus('loading');
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
+        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
         audio: false,
       });
       this.video.srcObject = this.stream;
@@ -200,21 +201,20 @@ export class HandController {
       baseOptions: { modelAssetPath, delegate },
       runningMode: 'VIDEO',
       numHands: 2,
-      minHandDetectionConfidence: 0.55,
-      minHandPresenceConfidence: 0.5,
-      minTrackingConfidence: 0.5,
+      minHandDetectionConfidence: 0.3,
+      minHandPresenceConfidence: 0.3,
+      minTrackingConfidence: 0.3,
     });
   }
 
   beginCalibration(): void {
     this.calibrationAngles = [];
-    this.input = { steering: 0, confidence: 0, active: false };
     this.resetBrakeGesture();
     this.setStatus('calibrating', 0);
   }
 
   getInput(): ControlInput {
-    if (performance.now() - this.lastSeen > 420) {
+    if (performance.now() - this.lastSeen > 1200) {
       this.resetBrakeGesture();
       return { steering: 0, confidence: 0, active: false };
     }
@@ -288,6 +288,9 @@ export class HandController {
   };
 
   private processFrame(now: DOMHighResTimeStamp): void {
+    if (this.video.paused && this.video.readyState >= 2) {
+      void this.video.play().catch(() => {});
+    }
     if (
       this.stopped ||
       this.paused ||
@@ -376,7 +379,7 @@ export class HandController {
 
   private consumeResult(result: HandTrackingResult): void {
     const now = performance.now();
-    if (result.landmarks.length !== 2) {
+    if (result.landmarks.length === 0) {
       if (now - this.lastSeen > DROPOUT_GRACE_MS) {
         this.resetBrakeGesture();
         this.input = {
@@ -385,27 +388,87 @@ export class HandController {
           active: false,
         };
         if (this.status === 'tracking') this.setStatus('lost');
+      } else if (this.status === 'tracking') {
+        // Momentary dropout within grace window: sustain momentum and gently center steering
+        this.input = {
+          ...this.input,
+          steering: damp(this.input.steering, 0, 3, 1 / 30),
+          confidence: Math.max(0.4, (this.input.confidence ?? 0.7) * 0.9),
+          active: true,
+          accelerating: true,
+        };
       }
       return;
     }
 
+    this.lastSeen = now;
+
+    if (result.landmarks.length === 1) {
+      // Single-hand driving: smooth fallback so car keeps driving without sudden auto-braking
+      const handLandmarks = result.landmarks[0];
+      const wrist = handLandmarks[0];
+      const middleMcp = handLandmarks[9];
+      const palm = {
+        x: (wrist.x + middleMcp.x) * 0.5,
+        y: (wrist.y + middleMcp.y) * 0.5,
+      };
+      // Moving hand left/right across webcam view steers the vehicle
+      const lateralOffset = palm.x - 0.5;
+      const wristTilt = Math.atan2(middleMcp.x - wrist.x, -(middleMcp.y - wrist.y));
+      const rawSteering = clamp(-lateralOffset * 2.5 + wristTilt * 0.8, -1, 1);
+      const smoothedSteering = damp(this.input.steering, rawSteering, 22.0, 1 / 30);
+      const score = result.handednessScores[0] ?? 0.7;
+
+      const thumbBrake = isThumbUp(handLandmarks);
+      const braking = this.brakeGesture.update(thumbBrake, this.lastSeen);
+
+      // Single-hand paddle shift
+      const indexExt = isIndexExtended(handLandmarks);
+      if (indexExt && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 280) {
+        this.pendingGearShift = palm.x < 0.5 ? 1 : -1;
+        this.lastGearShiftTime = now;
+      }
+      this.wasRightIndexExtended = indexExt;
+
+      this.input = {
+        steering: smoothedSteering,
+        confidence: score,
+        active: true,
+        accelerating: !braking,
+        braking: braking ? true : undefined,
+        brakePressure: braking ? 1 : undefined,
+      };
+      if (this.status !== 'tracking') this.setStatus('tracking');
+      return;
+    }
+
     const hands = result.landmarks
-      .map((landmarks, index) => ({
-        landmarks,
-        wrist: landmarks[0],
-        closed: isClosedHand(landmarks),
-        openPalm: isOpenPalm(landmarks),
-        thumbUp: isThumbUp(landmarks),
-        score: result.handednessScores[index] ?? 0.7,
-      }))
-      .sort((a, b) => a.wrist.x - b.wrist.x);
+      .slice(0, 2)
+      .map((landmarks, index) => {
+        const wrist = landmarks[0];
+        const middleMcp = landmarks[9];
+        const palm = {
+          x: (wrist.x + middleMcp.x) * 0.5,
+          y: (wrist.y + middleMcp.y) * 0.5,
+        };
+        return {
+          landmarks,
+          wrist,
+          palm,
+          closed: isClosedHand(landmarks),
+          openPalm: isOpenPalm(landmarks),
+          thumbUp: isThumbUp(landmarks),
+          score: result.handednessScores[index] ?? 0.7,
+        };
+      })
+      .sort((a, b) => a.palm.x - b.palm.x);
 
     const separation = Math.hypot(
-      hands[1].wrist.x - hands[0].wrist.x,
-      hands[1].wrist.y - hands[0].wrist.y,
+      hands[1].palm.x - hands[0].palm.x,
+      hands[1].palm.y - hands[0].palm.y,
     );
     // Two distinct hands must be in camera view
-    if (separation < 0.10) {
+    if (separation < 0.08) {
       if (now - this.lastSeen > DROPOUT_GRACE_MS) {
         this.resetBrakeGesture();
         this.input.active = false;
@@ -414,53 +477,64 @@ export class HandController {
       return;
     }
 
-    const angle = Math.atan2(
-      hands[1].wrist.y - hands[0].wrist.y,
-      hands[1].wrist.x - hands[0].wrist.x,
-    );
+    // Palm center angle yields far smoother steering than wrist alone
+    const angle = Math.atan2(hands[1].palm.y - hands[0].palm.y, hands[1].palm.x - hands[0].palm.x);
     const confidence = Math.min(hands[0].score, hands[1].score);
-    this.lastSeen = now;
+
+    // Precise, linear steering response with minimal deadzone for micro-tremors
+    const raw = -steeringFromHands(hands[0].palm, hands[1].palm, this.neutralAngle, 0.025, 1.0);
+
+    // Deliberate brake gesture: thumbs raised upward (thumb-up)
+    // Natural open palm or fist grip drives and accelerates smoothly!
+    const thumbBraking = hands.some((hand) => hand.thumbUp);
+    const rawBrakePressure = thumbBraking ? 1 : 0;
+    const braking = this.brakeGesture.update(rawBrakePressure > 0, this.lastSeen);
+
+    // Fast, responsive adaptive smoothing
+    const steeringDelta = Math.abs(raw - this.input.steering);
+    const adaptiveLambda = lerp(20.0, 34.0, clamp((steeringDelta - 0.04) / 0.25, 0, 1));
+    const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, 1 / 30);
 
     if (this.status === 'calibrating') {
       this.resetBrakeGesture();
       this.calibrationAngles.push(angle);
-      const progress = this.calibrationAngles.length / 30;
+      const progress = Math.min(1.0, this.calibrationAngles.length / CALIBRATION_FRAMES);
       this.onStatus('calibrating', progress);
-      if (this.calibrationAngles.length >= 30) {
-        this.neutralAngle = this.circularAverage(this.calibrationAngles);
+      this.neutralAngle = this.circularAverage(this.calibrationAngles);
+
+      // Immediately provide active throttle and steering while calibration collects frames,
+      // so the car is responsive without any start-up lag!
+      this.input = {
+        steering: smoothedSteering,
+        confidence,
+        active: true,
+        accelerating: !braking,
+        braking: braking ? true : undefined,
+        brakePressure: braking ? rawBrakePressure : undefined,
+      };
+
+      if (this.calibrationAngles.length >= CALIBRATION_FRAMES) {
         this.setStatus('tracking');
       }
       return;
     }
 
-    // Precise, linear steering response with minimal deadzone for micro-tremors
-    const raw = -steeringFromHands(hands[0].wrist, hands[1].wrist, this.neutralAngle, 0.03, 1.0);
-
-    const palmsOpen = hands.every((hand) => hand.openPalm);
-    const rawBrakePressure = palmsOpen ? 1 : hands.every((hand) => hand.thumbUp) ? 0.5 : 0;
-    const braking = this.brakeGesture.update(rawBrakePressure > 0, this.lastSeen);
-
     // Paddle Shifter Gear Control Gestures:
-    const rightIndex = isIndexExtended(hands[1].landmarks);
-    const leftIndex = isIndexExtended(hands[0].landmarks);
+    // hands[0] = User's RIGHT hand in camera coordinates (smaller x in unmirrored feed)
+    // hands[1] = User's LEFT hand in camera coordinates (larger x in unmirrored feed)
+    const rightIndex = isIndexExtended(hands[0].landmarks);
+    const leftIndex = isIndexExtended(hands[1].landmarks);
 
-    if (rightIndex && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 300) {
+    if (rightIndex && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 280) {
       this.pendingGearShift = 1;
       this.lastGearShiftTime = now;
-    } else if (leftIndex && !this.wasLeftIndexExtended && now - this.lastGearShiftTime > 300) {
+    } else if (leftIndex && !this.wasLeftIndexExtended && now - this.lastGearShiftTime > 280) {
       this.pendingGearShift = -1;
       this.lastGearShiftTime = now;
     }
 
     this.wasRightIndexExtended = rightIndex;
     this.wasLeftIndexExtended = leftIndex;
-
-    // Fast, responsive adaptive smoothing:
-    // Lambda 18.0 when holding steady to eliminate noise without lag.
-    // Dynamic boost up to 32.0 when turning for instantaneous evasive authority.
-    const steeringDelta = Math.abs(raw - this.input.steering);
-    const adaptiveLambda = lerp(18.0, 32.0, clamp((steeringDelta - 0.04) / 0.25, 0, 1));
-    const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, 1 / 30);
 
     this.input = {
       steering: smoothedSteering,
@@ -497,8 +571,8 @@ export class HandController {
       return;
     this.lastPreviewTime = now;
 
-    const width = this.video.videoWidth || 320;
-    const height = this.video.videoHeight || 240;
+    const width = this.video.videoWidth || 640;
+    const height = this.video.videoHeight || 480;
     if (this.canvas.width !== width) this.canvas.width = width;
     if (this.canvas.height !== height) this.canvas.height = height;
     this.previewContext ??= this.canvas.getContext('2d');
@@ -510,19 +584,26 @@ export class HandController {
     context.scale(-1, 1);
 
     if (result.landmarks.length === 2) {
-      const leftWrist = result.landmarks[0][0];
-      const rightWrist = result.landmarks[1][0];
-      const leftX = leftWrist.x * width;
-      const leftY = leftWrist.y * height;
-      const rightX = rightWrist.x * width;
-      const rightY = rightWrist.y * height;
+      // Use palm center for visualization
+      const hand0Palm = {
+        x: (result.landmarks[0][0].x + result.landmarks[0][9].x) * 0.5,
+        y: (result.landmarks[0][0].y + result.landmarks[0][9].y) * 0.5,
+      };
+      const hand1Palm = {
+        x: (result.landmarks[1][0].x + result.landmarks[1][9].x) * 0.5,
+        y: (result.landmarks[1][0].y + result.landmarks[1][9].y) * 0.5,
+      };
+      const leftX = hand0Palm.x * width;
+      const leftY = hand0Palm.y * height;
+      const rightX = hand1Palm.x * width;
+      const rightY = hand1Palm.y * height;
       const centerX = (leftX + rightX) * 0.5;
       const centerY = (leftY + rightY) * 0.5;
 
       context.save();
-      context.setLineDash([10, 7]);
-      context.lineWidth = 2;
-      context.strokeStyle = 'rgba(236, 255, 118, 0.82)';
+      context.setLineDash([8, 6]);
+      context.lineWidth = 2.5;
+      context.strokeStyle = 'rgba(236, 255, 118, 0.88)';
       context.beginPath();
       context.moveTo(leftX, leftY);
       context.lineTo(rightX, rightY);
@@ -532,7 +613,7 @@ export class HandController {
       context.strokeStyle = 'rgba(5, 12, 16, 0.9)';
       context.lineWidth = 3;
       context.beginPath();
-      context.arc(centerX, centerY, 7, 0, Math.PI * 2);
+      context.arc(centerX, centerY, 8, 0, Math.PI * 2);
       context.fill();
       context.stroke();
       context.restore();

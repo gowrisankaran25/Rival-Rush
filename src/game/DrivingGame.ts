@@ -16,11 +16,7 @@ import {
   roadPitch,
   speedSensitiveSteering,
 } from './math';
-import {
-  createHighwayRoadTexture,
-  createRoadStrip,
-  updateRoadStrip,
-} from './roadSurface';
+import { createHighwayRoadTexture, createRoadStrip, updateRoadStrip } from './roadSurface';
 import { AdaptiveQuality, chooseInitialQuality } from './rendering/AdaptiveQuality';
 import type { GraphicsQualityMode, RenderQualitySettings } from './rendering/AdaptiveQuality';
 import { SceneryAssets } from './sceneryAssets';
@@ -441,6 +437,14 @@ export class DrivingGame {
   private rivalCar: TrafficCar | null = null;
   private onFinishCallback?: (result: RaceResult) => void;
   private onCountdownBeepCallback?: (isGo: boolean) => void;
+  private currentControl: ControlInput = { steering: 0, confidence: 1, active: false };
+
+  // ── Showroom 3D Turntable & Inspection ──
+  private isShowroomMode = false;
+  private showroomOrbitAngle = -0.6;
+  private showroomOrbitDistance = 5.4;
+  private showroomOrbitHeight = 1.35;
+  private isShowroomDragging = false;
 
   constructor(
     private readonly container: HTMLElement,
@@ -599,8 +603,8 @@ export class DrivingGame {
     this.headlightBeam = createHeadlightRoadBeam();
     this.scene.add(this.headlightBeam);
 
-    // Initialize camera immediately at the driver's-eye road view for frame 0
-    this.setupInitialCamera();
+    // Initialize track geometry, camera, and player position at distance 0
+    this.reset();
 
     // ── Speed-line particle system for immersive rushing feel ──
     this.initSpeedLines();
@@ -614,7 +618,8 @@ export class DrivingGame {
     if (!this.sceneAssetsLoaded || !this.carModelsApplied) {
       throw new Error('The game cannot start before all required assets load.');
     }
-    if (this.phase === 'crashed') this.reset();
+    this.setShowroomMode(false);
+    this.reset();
     this.startCountdown();
   }
 
@@ -665,7 +670,7 @@ export class DrivingGame {
       throw new Error('The game cannot start before all required assets load.');
     }
     this.phase = 'countdown';
-    this.countdownTimer = 3.0;
+    this.countdownTimer = 1.6;
     this.countdownValue = 3;
     this.lastBeepValue = null;
     this.clock.getDelta();
@@ -705,6 +710,23 @@ export class DrivingGame {
 
   getCameraModeName(): string {
     return CAMERA_CONFIGS[this.cameraMode]?.name ?? 'FRONT ROAD';
+  }
+
+  setShowroomMode(active: boolean): void {
+    this.isShowroomMode = active;
+    if (active) {
+      this.showroomOrbitAngle = -0.6;
+      this.speed = 0;
+    }
+  }
+
+  rotateShowroom(deltaX: number): void {
+    this.showroomOrbitAngle -= deltaX * 0.007;
+    this.isShowroomDragging = true;
+  }
+
+  endShowroomDrag(): void {
+    this.isShowroomDragging = false;
   }
 
   shiftGear(direction: 1 | -1, force = false): number {
@@ -947,28 +969,71 @@ export class DrivingGame {
   }
 
   reset(): void {
+    // 1. Reset track and scenery FIRST so roadCenter(0) and roadHeading(0) are accurate
+    proceduralTrack.reset();
+    this.highwayScenery.reset();
+    this.finishDistance = this.raceModeConfig?.distanceMeters ?? null;
+    this.timeLimitSeconds = this.raceModeConfig?.timeLimitSeconds ?? null;
+    this.hasRival = this.raceModeConfig?.hasRival ?? false;
+    this.finishLine.setFinishDistance(this.finishDistance);
+
+    // 2. Position player in the exact center lane of the road at distance 0
     this.distance = 0;
     this.speed = 0;
     this.health = 100;
     this.collisionCooldown = 0;
     this.bonusScore = 0;
     this.nitroTimer = 0;
-    this.interactables.forEach((item) => {
-      item.active = false;
-      item.mesh.visible = false;
-    });
-    this.lateral = laneOffsets[1];
-    this.worldX = roadCenter(0) + Math.cos(roadHeading(0)) * laneOffsets[1];
-    this.vehicleHeading = roadHeading(0);
     this.overtakes = 0;
     this.assistMessage = 'READY';
     this.hornCooldown = 0;
     this.phase = 'ready';
-    this.currentGear = 3;
+    this.currentGear = 1;
     this.gearShiftCooldown = 0;
     this.gearShiftSurge = 0;
+    this.steeringVisual = 0;
+    this.cameraRoll = 0;
+    this.tireSlip = 0;
+    this.isFinishingSequence = false;
+    this.finishResultEmitted = false;
+    this.finishEaseTimer = 0;
+    this.countdownValue = null;
+    this.lastBeepValue = null;
+    this.approachWarning = null;
+
+    // Reset lane and coordinates to safe center lane on track
+    this.lateral = laneOffsets[1]; // 0: middle lane
+    this.vehicleHeading = roadHeading(0);
+    this.worldX = roadCenter(0) + Math.cos(this.vehicleHeading) * this.lateral;
+
+    const playerElevation = roadElevation(0);
+    const playerPitch = roadPitch(0);
+    this.player.position.set(this.worldX, playerElevation + 0.02, 0);
+    this.player.rotation.set(-playerPitch, this.vehicleHeading, 0);
     this.setVehicleBrake(this.player, false);
-    this.setupInitialCamera();
+
+    // 3. Immediately rebuild road and shoulder strips at distance 0
+    if (this.shoulderGeometry && this.roadGeometry) {
+      const start = Math.max(-40, -GAME.lookBehind);
+      const length = GAME.lookAhead + GAME.lookBehind + 150;
+      updateRoadStrip(this.shoulderGeometry, start, length);
+      updateRoadStrip(this.roadGeometry, start, length);
+      this.lastRoadUpdateDistance = 0;
+      this.roadUpdateElapsed = 0;
+    }
+
+    // 4. Reset interactables
+    this.interactables.forEach((item) => {
+      item.active = false;
+      item.mesh.visible = false;
+    });
+    let interactableCursor = 100;
+    for (let i = 0; i < 8; i++) {
+      this.spawnInteractable(interactableCursor);
+      interactableCursor += 80 + Math.random() * 120;
+    }
+
+    // 5. Reset traffic
     let ongoingCursor = 45;
     let incomingCursor = 62;
     this.traffic.forEach((car, index) => {
@@ -982,24 +1047,6 @@ export class DrivingGame {
       }
     });
 
-    let interactableCursor = 100;
-    for (let i = 0; i < 8; i++) {
-      this.spawnInteractable(interactableCursor);
-      interactableCursor += 80 + Math.random() * 120;
-    }
-
-    proceduralTrack.reset();
-    this.highwayScenery.reset();
-
-    this.raceTimeSeconds = 0;
-    this.finishResultEmitted = false;
-    this.isFinishingSequence = false;
-    this.finishEaseTimer = 0;
-    this.countdownValue = null;
-    this.lastBeepValue = null;
-    this.approachWarning = null;
-    this.finishLine.setFinishDistance(this.finishDistance);
-
     if (this.hasRival && this.traffic.length > 0) {
       this.rivalCar = this.traffic[0];
       this.rivalCar.isRival = true;
@@ -1007,7 +1054,12 @@ export class DrivingGame {
       this.rivalCar.distance = 42;
       this.rivalCar.speed = 46;
       this.rivalCar.targetSpeed = 58;
+    } else {
+      this.rivalCar = null;
     }
+
+    // 6. Reset camera directly behind/inside the player
+    this.setupInitialCamera();
   }
 
   getPhase(): GamePhase {
@@ -1143,6 +1195,11 @@ export class DrivingGame {
     inactive.distance = this.distance + ahead;
     inactive.lane = Math.floor(Math.random() * laneOffsets.length);
     inactive.laneOffset = (Math.random() - 0.5) * 1.0;
+    if (this.finishDistance !== null && inactive.distance >= this.finishDistance - 150) {
+      if (inactive.type === 'roadblock') {
+        inactive.type = 'coin';
+      }
+    }
     inactive.mesh.visible = true;
     inactive.rotationY = 0;
   }
@@ -1369,7 +1426,8 @@ export class DrivingGame {
     const furthest = this.traffic
       .filter((other) => other !== car && other.direction === car.direction)
       .reduce((max, other) => Math.max(max, other.distance), this.distance + minAhead);
-    let candidateDist = ahead ?? Math.max(this.distance + minAhead, furthest + 38 + Math.random() * 80);
+    let candidateDist =
+      ahead ?? Math.max(this.distance + minAhead, furthest + 38 + Math.random() * 80);
 
     // Collision buffer: ensure car does not spawn overlapping another car in the same lane
     for (let attempt = 0; attempt < 6; attempt++) {
@@ -1430,14 +1488,15 @@ export class DrivingGame {
 
         if (item.type === 'coin') {
           this.bonusScore += 500;
-          this.assistMessage = 'COIN +500';
+          this.health = Math.min(100, this.health + 10);
+          this.assistMessage = 'COIN +500 · REPAIR +10%';
         } else if (item.type === 'nitro') {
           this.nitroTimer = 2.5;
           this.assistMessage = 'NITRO BOOST!';
         } else if (item.type === 'roadblock') {
-          if (this.collisionCooldown <= 0) {
-            this.health -= 50;
-            this.collisionCooldown = 1.5;
+          if (this.collisionCooldown <= 0 && !this.isFinishingSequence) {
+            this.health = Math.max(0, this.health - 25);
+            this.collisionCooldown = 1.2;
             if (this.health <= 0) {
               this.phase = 'crashed';
               this.speed = 0;
@@ -1446,15 +1505,16 @@ export class DrivingGame {
               this.onCrash();
               break;
             } else {
-              this.assistMessage = 'ROADBLOCK HIT';
-              this.speed *= 0.3;
+              this.assistMessage = 'ROADBLOCK HIT -25 HP';
+              this.speed *= 0.5;
             }
           }
         }
       }
     }
 
-    const control = this.getControl();
+    this.currentControl = this.getControl();
+    const control = this.currentControl;
 
     // Process gear shift inputs from webcam gesture (paddle shift) or keyboard
     if (control.gearShift) {
@@ -1465,6 +1525,23 @@ export class DrivingGame {
 
     const currentGearSpec = GEAR_SPECS[this.currentGear - 1];
     const gearMaxSpeed = currentGearSpec.maxSpeedMs;
+
+    // Smart auto-transmission assist: smoothly upshift at optimal powerband peak
+    if (
+      control.accelerating &&
+      !control.braking &&
+      this.speed >= gearMaxSpeed * 0.86 &&
+      this.currentGear < GEAR_SPECS.length &&
+      this.gearShiftCooldown <= 0
+    ) {
+      this.shiftGear(1);
+    } else if (
+      this.currentGear > 1 &&
+      this.gearShiftCooldown <= 0 &&
+      this.speed < (GEAR_SPECS[this.currentGear - 2]?.maxSpeedMs ?? 0) * 0.72
+    ) {
+      this.shiftGear(-1);
+    }
     const curveLimit = curveSpeedLimit(this.distance, gearMaxSpeed, GAME.minCurveSpeed);
     const conceptDriver = this.driverCar === 'luxury-concept';
     const collisionLength = conceptDriver ? GAME.conceptCollisionLength : GAME.collisionLength;
@@ -1501,12 +1578,11 @@ export class DrivingGame {
     this.assistMessage = speedPlan.assistMessage;
     this.isPlayerBraking = safetyBraking || control.braking === true;
     this.setVehicleBrake(this.player, this.isPlayerBraking);
-    this.speed = damp(
-      this.speed,
-      targetSpeed,
-      acceleration / Math.max(8, Math.abs(targetSpeed - this.speed)),
-      dt,
+    const accelLambda = Math.max(
+      3.2,
+      acceleration / Math.max(5, Math.abs(targetSpeed - this.speed)),
     );
+    this.speed = damp(this.speed, targetSpeed, accelLambda, dt);
     if (targetSpeed === 0 && Math.abs(this.speed) < 0.3) this.speed = 0;
 
     this.steeringVisual = damp(this.steeringVisual, control.steering, 20, dt);
@@ -1620,9 +1696,9 @@ export class DrivingGame {
         }
       }
       if (Math.abs(gap) < collisionLength && laneGap < collisionWidth) {
-        if (this.collisionCooldown <= 0) {
-          this.health -= 25;
-          this.collisionCooldown = 1.5;
+        if (this.collisionCooldown <= 0 && !this.isFinishingSequence) {
+          this.health = Math.max(0, this.health - 20);
+          this.collisionCooldown = 1.2;
           if (this.health <= 0) {
             this.phase = 'crashed';
             this.speed = 0;
@@ -1631,13 +1707,19 @@ export class DrivingGame {
             this.onCrash();
             break;
           } else {
-            this.assistMessage = 'DAMAGE TAKEN';
-            this.speed *= 0.5;
+            this.assistMessage = 'DAMAGE TAKEN -20 HP';
+            this.speed *= 0.65;
             this.setVehicleBrake(this.player, true);
           }
         }
       }
-      if (gap < (car.direction === -1 ? -45 : -70)) this.spawnTraffic(car, undefined, true);
+      if (gap < (car.direction === -1 ? -45 : -70)) {
+        if (car === this.rivalCar || car.isRival) {
+          // Rival stays behind once overtaken, do not teleport ahead of player!
+          continue;
+        }
+        this.spawnTraffic(car, undefined, true);
+      }
     }
   }
 
@@ -1810,7 +1892,7 @@ export class DrivingGame {
     this.shadowCenter.copy(this.player.position).addScaledVector(this.forward, 32);
     updateSceneShadow(this.lighting, this.shadowCenter);
 
-    const control = this.getControl();
+    const control = this.currentControl;
     const gearMaxSpeed = GEAR_SPECS[this.currentGear - 1].maxSpeedMs;
 
     // Subtle pitch dynamics on throttle and braking
@@ -1851,21 +1933,58 @@ export class DrivingGame {
     );
     this.desiredCamera.add(this.cameraShakeOffset);
 
-    // Smooth position tracking (graceful chase follow or tight front tracking)
-    const lerpRate = camConfig.showCar ? 11 : 14;
-    this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-lerpRate * dt));
+    if (this.isShowroomMode) {
+      this.player.visible = true;
+      this.player.traverse((child) => {
+        child.visible = true;
+      });
 
-    // Look directly ahead toward target
-    this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, camConfig.lookAhead);
-    this.cameraTarget.y = this.player.position.y + camConfig.lookHeight + pitchOffset;
-    this.camera.lookAt(this.cameraTarget);
+      if (!this.isShowroomDragging) {
+        this.showroomOrbitAngle += dt * 0.22;
+      }
 
-    // Subtle lateral G-force body roll on steering turns
-    const rollScale = camConfig.showCar ? 0.65 : 1.0;
-    const targetRoll =
-      -this.steeringVisual * MAX_ROLL_ANGLE * rollScale * (0.35 + speedRatio * 0.65);
-    this.cameraRoll = damp(this.cameraRoll, targetRoll, 7, dt);
-    this.camera.rotation.z += this.cameraRoll;
+      const dist = this.showroomOrbitDistance;
+      const phi = this.vehicleHeading + this.showroomOrbitAngle;
+      const rightX = Math.cos(this.vehicleHeading);
+      const rightZ = -Math.sin(this.vehicleHeading);
+
+      // Offset camera target to the left so the 3D car is framed on the open right side of screen
+      const screenOffsetX = -rightX * 1.4;
+      const screenOffsetZ = -rightZ * 1.4;
+
+      const camX = this.player.position.x + Math.sin(phi) * dist + screenOffsetX;
+      const camZ = this.player.position.z + Math.cos(phi) * dist + screenOffsetZ;
+      const camY = this.player.position.y + this.showroomOrbitHeight;
+
+      this.desiredCamera.set(camX, camY, camZ);
+      this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-12 * dt));
+
+      this.cameraTarget.set(
+        this.player.position.x + screenOffsetX,
+        this.player.position.y + 0.72,
+        this.player.position.z + screenOffsetZ,
+      );
+      this.camera.lookAt(this.cameraTarget);
+      this.camera.rotation.z = 0;
+    } else {
+      // Smooth position tracking (graceful chase follow or tight front tracking)
+      const lerpRate = camConfig.showCar ? 11 : 14;
+      this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-lerpRate * dt));
+
+      // Look directly ahead toward target
+      this.cameraTarget
+        .copy(this.player.position)
+        .addScaledVector(this.forward, camConfig.lookAhead);
+      this.cameraTarget.y = this.player.position.y + camConfig.lookHeight + pitchOffset;
+      this.camera.lookAt(this.cameraTarget);
+
+      // Subtle lateral G-force body roll on steering turns
+      const rollScale = camConfig.showCar ? 0.65 : 1.0;
+      const targetRoll =
+        -this.steeringVisual * MAX_ROLL_ANGLE * rollScale * (0.35 + speedRatio * 0.65);
+      this.cameraRoll = damp(this.cameraRoll, targetRoll, 7, dt);
+      this.camera.rotation.z += this.cameraRoll;
+    }
 
     // ── Update speed-line particles ──
     this.updateSpeedLines(dt, speedRatio);
@@ -1898,6 +2017,7 @@ export class DrivingGame {
     this.isFinishingSequence = true;
     this.phase = 'finishing';
     this.finishEaseTimer = 0;
+    this.approachWarning = null;
     if (reachedEnd) {
       this.finishLine.triggerVictoryConfetti(this.player.position);
       this.assistMessage = '🏁 FINISH LINE CROSSED!';
@@ -1910,18 +2030,48 @@ export class DrivingGame {
     if (this.finishResultEmitted) return;
     this.finishResultEmitted = true;
 
-    const position = this.getRivalPosition();
+    const reachedFinish = this.finishDistance !== null && this.distance >= this.finishDistance - 15;
+    const withinTime =
+      this.timeLimitSeconds === null || this.raceTimeSeconds <= this.timeLimitSeconds;
+
     let won = false;
-    if (this.currentRaceMode === 'rival_race') {
-      won = position === 1;
+    let position = 1;
+
+    if (this.currentRaceMode === 'rival_race' || this.currentRaceMode === 'championship') {
+      const rivalDist = this.rivalCar?.distance ?? 0;
+      const beatRival = !this.hasRival || !this.rivalCar || this.distance >= rivalDist;
+      if (reachedFinish && withinTime && beatRival) {
+        won = true;
+        position = 1;
+      } else if (!beatRival) {
+        won = false;
+        position = 2;
+      } else {
+        won = reachedFinish && withinTime;
+        position = beatRival ? 1 : 2;
+      }
     } else if (this.currentRaceMode === 'time_attack') {
-      won = this.timeLimitSeconds === null || this.raceTimeSeconds <= this.timeLimitSeconds;
+      // Time Attack: Reaching the sprint finish line before the timer expires is a 1st place victory!
+      if (reachedFinish && withinTime) {
+        won = true;
+        position = 1;
+      } else {
+        won = false;
+        position = 1;
+      }
     } else if (this.currentRaceMode === 'traffic_challenge') {
-      won = this.overtakes >= 12 && this.health >= 50;
-    } else if (this.currentRaceMode === 'championship') {
-      won = position === 1;
+      // Traffic Gauntlet: Completing the course distance awards completion victory!
+      if (reachedFinish) {
+        won = true;
+        position = 1;
+      } else {
+        won = false;
+        position = 1;
+      }
     } else {
-      won = true; // Endless highway completion
+      // Endless highway
+      won = true;
+      position = 1;
     }
 
     const result: RaceResult = {
@@ -1956,9 +2106,9 @@ export class DrivingGame {
 
     if (this.phase === 'countdown') {
       this.countdownTimer -= dt;
-      if (this.countdownTimer > 2.0) this.countdownValue = 3;
-      else if (this.countdownTimer > 1.0) this.countdownValue = 2;
-      else if (this.countdownTimer > 0.0) this.countdownValue = 1;
+      if (this.countdownTimer > 1.1) this.countdownValue = 3;
+      else if (this.countdownTimer > 0.6) this.countdownValue = 2;
+      else if (this.countdownTimer > 0.1) this.countdownValue = 1;
       else this.countdownValue = 0;
 
       if (this.countdownValue !== this.lastBeepValue) {
@@ -1966,7 +2116,7 @@ export class DrivingGame {
         this.onCountdownBeepCallback?.(this.countdownValue === 0);
       }
 
-      if (this.countdownTimer <= -0.45) {
+      if (this.countdownTimer <= -0.35) {
         this.phase = 'racing';
         this.countdownValue = null;
         this.assistMessage = 'GO! RACE ACTIVE';
@@ -2070,6 +2220,7 @@ export class DrivingGame {
         countdownValue: this.countdownValue,
         approachWarning: this.approachWarning,
         raceModeName: this.currentRaceMode,
+        steering: this.steeringVisual,
       });
     }
   };
@@ -2219,10 +2370,10 @@ export class DrivingGame {
     });
     this.forward.set(-Math.sin(this.vehicleHeading), 0, -Math.cos(this.vehicleHeading));
     this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -camConfig.camBack);
-    this.desiredCamera.y = camConfig.camHeight;
+    this.desiredCamera.y = this.player.position.y + camConfig.camHeight;
     this.camera.position.copy(this.desiredCamera);
     this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, camConfig.lookAhead);
-    this.cameraTarget.y = camConfig.lookHeight;
+    this.cameraTarget.y = this.player.position.y + camConfig.lookHeight;
     this.camera.lookAt(this.cameraTarget);
     this.cameraRoll = 0;
   }

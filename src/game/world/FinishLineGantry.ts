@@ -264,10 +264,10 @@ export class FinishLineGantry {
 
       const palette = [
         [0.91, 1.0, 0.26], // neon lime #e9ff42
-        [1.0, 0.84, 0.0],  // gold
-        [0.0, 0.9, 1.0],   // cyan
-        [1.0, 0.2, 0.4],   // magenta/red
-        [1.0, 1.0, 1.0],   // pure white
+        [1.0, 0.84, 0.0], // gold
+        [0.0, 0.9, 1.0], // cyan
+        [1.0, 0.2, 0.4], // magenta/red
+        [1.0, 1.0, 1.0], // pure white
       ];
 
       for (let i = 0; i < count; i++) {
@@ -315,7 +315,12 @@ export class FinishLineGantry {
   }
 
   update(dt: number): void {
-    if (!this.confettiActive || !this.confettiMesh || !this.confettiPositions || !this.confettiVelocities) {
+    if (
+      !this.confettiActive ||
+      !this.confettiMesh ||
+      !this.confettiPositions ||
+      !this.confettiVelocities
+    ) {
       return;
     }
 

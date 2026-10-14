@@ -11,7 +11,15 @@ export type CarModelId =
 export interface VehicleSpec {
   id: CarModelId;
   label: string;
-  category: 'PERFORMANCE TRUCK' | 'RUGGED SUV' | 'ELECTRIC GT' | 'AERO PROTOTYPE' | 'CLASSIC MUSCLE' | 'ENDURANCE LEGEND' | 'JDM TUNER' | 'AMERICAN HYPER';
+  category:
+    | 'PERFORMANCE TRUCK'
+    | 'RUGGED SUV'
+    | 'ELECTRIC GT'
+    | 'AERO PROTOTYPE'
+    | 'CLASSIC MUSCLE'
+    | 'ENDURANCE LEGEND'
+    | 'JDM TUNER'
+    | 'AMERICAN HYPER';
   topSpeedKph: number;
   accelRating: number; // 1 to 10
   handlingRating: number; // 1 to 10
@@ -35,7 +43,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 6.5,
     priceCredits: 0,
     unlockedByDefault: true,
-    description: 'High-output twin-turbo V6 terrain conqueror. Maximum stability, forgiving road manners, and heavy presence.',
+    description:
+      'High-output twin-turbo V6 terrain conqueror. Maximum stability, forgiving road manners, and heavy presence.',
     defaultColorHex: '#f5f7f4',
   },
   'ford-everest-sport': {
@@ -48,7 +57,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 7.0,
     priceCredits: 1200,
     unlockedByDefault: true,
-    description: 'Modern turbo-diesel adventure chassis. Solid road-holding through high-speed curves with exceptional chassis balance.',
+    description:
+      'Modern turbo-diesel adventure chassis. Solid road-holding through high-speed curves with exceptional chassis balance.',
     defaultColorHex: '#1b2330',
   },
   'ioniq-5': {
@@ -61,7 +71,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 8.0,
     priceCredits: 2000,
     unlockedByDefault: true,
-    description: 'Dual-motor electric propulsion with instantaneous launch torque and ultra-low center of gravity.',
+    description:
+      'Dual-motor electric propulsion with instantaneous launch torque and ultra-low center of gravity.',
     defaultColorHex: '#e9eef2',
   },
   'luxury-concept': {
@@ -74,7 +85,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 8.5,
     priceCredits: 0,
     unlockedByDefault: true,
-    description: 'Low-slung aerodynamic grand tourer. Laser-sharp lane changes and blistering straightaway pace.',
+    description:
+      'Low-slung aerodynamic grand tourer. Laser-sharp lane changes and blistering straightaway pace.',
     defaultColorHex: '#808992',
   },
   'oldsmobile-cutlass': {
@@ -87,7 +99,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 7.5,
     priceCredits: 0,
     unlockedByDefault: true,
-    description: 'Raw Rocket V8 torque with authentic American thunder. Demands assertive steering and rewards bold throttle.',
+    description:
+      'Raw Rocket V8 torque with authentic American thunder. Demands assertive steering and rewards bold throttle.',
     defaultColorHex: '#b28d42',
   },
   'ford-gt40': {
@@ -100,7 +113,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 9.0,
     priceCredits: 0,
     unlockedByDefault: true,
-    description: 'Le Mans champion that rewrote motorsport history. Ultra-light, razor-sharp response, and intoxicating 7000 RPM scream.',
+    description:
+      'Le Mans champion that rewrote motorsport history. Ultra-light, razor-sharp response, and intoxicating 7000 RPM scream.',
     defaultColorHex: '#0055b3',
   },
   'skyline-r34': {
@@ -113,7 +127,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 8.8,
     priceCredits: 0,
     unlockedByDefault: true,
-    description: 'Twin-turbo ATTESA all-wheel precision weapon. Unshakeable grip, rapid boost response, and supreme cornering authority.',
+    description:
+      'Twin-turbo ATTESA all-wheel precision weapon. Unshakeable grip, rapid boost response, and supreme cornering authority.',
     defaultColorHex: '#2244aa',
   },
   'ford-gt-2006': {
@@ -126,7 +141,8 @@ export const VEHICLE_SPECS: Record<CarModelId, VehicleSpec> = {
     nitroRating: 9.5,
     priceCredits: 0,
     unlockedByDefault: true,
-    description: 'Supercharged 5.4L mid-engine supercar. Colossal top-end acceleration with surgical track-day steering agility.',
+    description:
+      'Supercharged 5.4L mid-engine supercar. Colossal top-end acceleration with surgical track-day steering agility.',
     defaultColorHex: '#d81824',
   },
 };
@@ -144,4 +160,3 @@ export function selectCarModelIds(playerModelId: CarModelId, requestedCount: num
   const count = Math.max(1, Math.min(modelIds.length, normalizedCount));
   return Array.from({ length: count }, (_, offset) => modelIds[(start + offset) % modelIds.length]);
 }
-

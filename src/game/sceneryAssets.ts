@@ -128,10 +128,7 @@ export class SceneryAssets {
     return group;
   }
 
-  createHighwayGantry(
-    dest1 = '⬉ RIVAL CITY / METRO',
-    dest2 = 'NORTH EXPRESSWAY ⬈',
-  ): THREE.Group {
+  createHighwayGantry(dest1 = '⬉ RIVAL CITY / METRO', dest2 = 'NORTH EXPRESSWAY ⬈'): THREE.Group {
     const group = new THREE.Group();
     group.userData.kind = 'highway-gantry';
     group.userData.dest1 = dest1;
@@ -269,10 +266,7 @@ export class SceneryAssets {
     group.add(parapet);
 
     // Portal illuminated name plate / LED sign
-    const signBoard = new THREE.Mesh(
-      new THREE.BoxGeometry(18.5, 1.7, 0.35),
-      headerMat,
-    );
+    const signBoard = new THREE.Mesh(new THREE.BoxGeometry(18.5, 1.7, 0.35), headerMat);
     signBoard.position.set(0, 10.5, isExit ? -3.1 : 3.1);
     group.add(signBoard);
 
@@ -426,19 +420,13 @@ export class SceneryAssets {
     ];
 
     for (const cfg of towerConfigs) {
-      const tower = new THREE.Mesh(
-        new THREE.BoxGeometry(cfg.w, cfg.h, cfg.d),
-        cfg.mat,
-      );
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(cfg.w, cfg.h, cfg.d), cfg.mat);
       tower.position.set(cfg.x, cfg.h * 0.5, 0);
       group.add(tower);
 
       // Window grid band panels on tower facade
       for (let floorY = 8; floorY < cfg.h - 6; floorY += 10) {
-        const winBand = new THREE.Mesh(
-          new THREE.PlaneGeometry(cfg.w * 0.82, 3.2),
-          windowMat,
-        );
+        const winBand = new THREE.Mesh(new THREE.PlaneGeometry(cfg.w * 0.82, 3.2), windowMat);
         winBand.position.set(cfg.x, floorY, cfg.d * 0.5 + 0.1);
         group.add(winBand);
       }

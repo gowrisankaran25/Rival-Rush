@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createHighwayRoadTexture,
-  createRoadStrip,
-  updateRoadStrip,
-} from './roadSurface';
+import { createHighwayRoadTexture, createRoadStrip, updateRoadStrip } from './roadSurface';
 
 describe('road surface', () => {
   it('keeps constant world-up normals while updating the ribbon', () => {

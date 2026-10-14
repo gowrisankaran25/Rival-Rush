@@ -150,9 +150,9 @@ export const MOTORSPORT_PRESET_PAINTS: readonly { name: string; hex: string }[] 
 ];
 
 function createInitialProgression(): ProgressionData {
-  const initialCars: CarModelId[] = (
-    Object.keys(VEHICLE_SPECS) as CarModelId[]
-  ).filter((id) => VEHICLE_SPECS[id].unlockedByDefault);
+  const initialCars: CarModelId[] = (Object.keys(VEHICLE_SPECS) as CarModelId[]).filter(
+    (id) => VEHICLE_SPECS[id].unlockedByDefault,
+  );
 
   return {
     version: 2,
@@ -226,7 +226,9 @@ export class ProgressionStore {
             ...(Array.isArray(parsed.unlockedCars) ? parsed.unlockedCars : []),
           ]),
         ),
-        unlockedPaints: Array.isArray(parsed.unlockedPaints) ? parsed.unlockedPaints : initial.unlockedPaints,
+        unlockedPaints: Array.isArray(parsed.unlockedPaints)
+          ? parsed.unlockedPaints
+          : initial.unlockedPaints,
         records: {
           ...initial.records,
           ...(parsed.records || {}),

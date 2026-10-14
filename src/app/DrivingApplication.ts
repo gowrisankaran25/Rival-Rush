@@ -3,11 +3,7 @@ import type { HandController } from '../controls/HandController';
 import { KeyboardController } from '../controls/KeyboardController';
 import type { DrivingGame } from '../game/DrivingGame';
 import type { ControlInput, ControlMode, GameSnapshot, RaceResult } from '../game/types';
-import {
-  CAR_MODEL_OPTIONS,
-  DEFAULT_CAR_MODEL_ID,
-  VEHICLE_SPECS,
-} from '../game/vehicleCatalog';
+import { CAR_MODEL_OPTIONS, DEFAULT_CAR_MODEL_ID, VEHICLE_SPECS } from '../game/vehicleCatalog';
 import type { CarModelId } from '../game/vehicleCatalog';
 import { RACE_MODES, type RaceModeId } from '../game/progression/raceModes';
 import { progressionStore } from '../services/progressionStore';
@@ -102,7 +98,6 @@ export class DrivingApplication {
     this.updateControlModeUi();
     this.updateGarageUi();
     this.updateAchievementsUi();
-    this.syncMenuSoundtrackUi();
     this.showView('home');
     this.assetsReady = this.installAssets();
   }
@@ -181,6 +176,9 @@ export class DrivingApplication {
         }
         this.cameraShell?.classList.remove('is-hidden', 'is-offline', 'is-calibrating');
         byId('show-camera')?.classList.add('is-hidden');
+        if (this.video && this.video.paused) {
+          void this.video.play().catch(() => {});
+        }
       } else {
         this.cameraShell?.classList.add('is-hidden');
         byId('show-camera')?.classList.add('is-hidden');
@@ -194,25 +192,28 @@ export class DrivingApplication {
       }
       this.cameraShell?.classList.remove('is-offline', 'is-hidden');
       this.cameraShell?.classList.add('is-calibrating');
+      if (this.video && this.video.paused) {
+        void this.video.play().catch(() => {});
+      }
     }
 
     if (viewId === 'garage') {
       this.updateGarageUi();
       const currentCarId = CAR_MODEL_OPTIONS[this.garageSelectedCarIndex]?.id ?? this.driverCar;
       if (this.game) {
-        if (this.game.getCameraMode() === 0) {
+        this.game.setShowroomMode(true);
+        void this.game.setCars(currentCarId, this.trafficCount, this.modelCount, this.driverColor);
+      }
+    } else {
+      this.game?.setShowroomMode(false);
+      if (viewId === 'achievements') {
+        this.updateAchievementsUi();
+      } else if (viewId === 'home') {
+        this.updateHomeHero();
+        if (this.game && this.game.getCameraMode() === 0) {
           this.game.setCameraMode(1);
           this.updateCameraButton(this.game.getCameraModeName());
         }
-        void this.game.setCars(currentCarId, this.trafficCount, this.modelCount, this.driverColor);
-      }
-    } else if (viewId === 'achievements') {
-      this.updateAchievementsUi();
-    } else if (viewId === 'home') {
-      this.updateHomeHero();
-      if (this.game && this.game.getCameraMode() === 0) {
-        this.game.setCameraMode(1);
-        this.updateCameraButton(this.game.getCameraModeName());
       }
     }
 
@@ -227,7 +228,9 @@ export class DrivingApplication {
 
     if (heroCar) heroCar.textContent = VEHICLE_SPECS[this.driverCar]?.label ?? 'SUPERCAR';
     if (heroMode) heroMode.textContent = RACE_MODES[this.currentModeId]?.name ?? 'ENDLESS HIGHWAY';
-    if (heroCtrl) heroCtrl.textContent = this.mode === 'hands' ? 'WEBCAM HAND TRACKING' : 'KEYBOARD (WASD / ARROWS)';
+    if (heroCtrl)
+      heroCtrl.textContent =
+        this.mode === 'hands' ? 'WEBCAM HAND TRACKING' : 'KEYBOARD (WASD / ARROWS)';
     if (heroCreds) heroCreds.textContent = `${progressionStore.getCredits().toLocaleString()} CR`;
   }
 
@@ -320,13 +323,9 @@ export class DrivingApplication {
     const total = CAR_MODEL_OPTIONS.length;
     this.garageSelectedCarIndex = (this.garageSelectedCarIndex + delta + total) % total;
     const carId = CAR_MODEL_OPTIONS[this.garageSelectedCarIndex].id;
-    this.audio.previewCarEngine(carId);
     this.updateGarageUi();
     if (this.game) {
-      if (this.game.getCameraMode() === 0) {
-        this.game.setCameraMode(1);
-        this.updateCameraButton(this.game.getCameraModeName());
-      }
+      this.game.setShowroomMode(true);
       void this.game.setCars(carId, this.trafficCount, this.modelCount, this.driverColor);
     }
   }
@@ -341,7 +340,6 @@ export class DrivingApplication {
       this.driverCar = carId;
       progressionStore.setSelectedCar(carId);
       this.audio.playMedalChime();
-      this.audio.previewCarEngine(carId);
       this.updateGarageUi();
       this.updateHomeHero();
       if (this.game) {
@@ -353,7 +351,6 @@ export class DrivingApplication {
         this.driverCar = carId;
         progressionStore.setSelectedCar(carId);
         this.audio.playMedalChime();
-        this.audio.previewCarEngine(carId);
         this.updateGarageUi();
         this.updateCareerBadges();
         this.updateHomeHero();
@@ -368,8 +365,9 @@ export class DrivingApplication {
     this.driverColor = parseInt(hex.replace('#', ''), 16);
     progressionStore.setSelectedPaintHex(hex);
     this.updateGarageUi();
+    const currentCarId = CAR_MODEL_OPTIONS[this.garageSelectedCarIndex]?.id ?? this.driverCar;
     if (this.game) {
-      void this.prepareSelectedCars();
+      void this.game.setCars(currentCarId, this.trafficCount, this.modelCount, this.driverColor);
     }
   }
 
@@ -401,7 +399,9 @@ export class DrivingApplication {
       const statusSpan = card.querySelector('.achievement-status');
       if (statusSpan) {
         statusSpan.textContent = isUnlocked ? 'UNLOCKED' : 'LOCKED';
-        statusSpan.className = isUnlocked ? 'achievement-status is-unlocked' : 'achievement-status is-locked';
+        statusSpan.className = isUnlocked
+          ? 'achievement-status is-unlocked'
+          : 'achievement-status is-locked';
       }
     });
   }
@@ -417,7 +417,11 @@ export class DrivingApplication {
     byId('nav-home').addEventListener('click', () => this.showView('home'), options);
     byId('nav-play').addEventListener('click', () => this.showView('modes'), options);
     byId('nav-garage').addEventListener('click', () => this.showView('garage'), options);
-    byId('nav-achievements').addEventListener('click', () => this.showView('achievements'), options);
+    byId('nav-achievements').addEventListener(
+      'click',
+      () => this.showView('achievements'),
+      options,
+    );
     byId('nav-settings').addEventListener('click', () => this.openGeneralSettings(), options);
 
     // Hero buttons
@@ -433,14 +437,43 @@ export class DrivingApplication {
     byId('garage-prev-car').addEventListener('click', () => this.cycleGarageCar(-1), options);
     byId('garage-next-car').addEventListener('click', () => this.cycleGarageCar(1), options);
     byId('garage-select-btn').addEventListener('click', () => this.onGarageSelectCar(), options);
-    byId('garage-test-engine-btn').addEventListener(
-      'click',
-      () => {
-        const carId = CAR_MODEL_OPTIONS[this.garageSelectedCarIndex].id;
-        this.audio.previewCarEngine(carId);
-      },
-      options,
-    );
+
+    // Interactive 3D showroom drag-to-rotate
+    const showroomStage = document.getElementById('garage-showroom-stage');
+    if (showroomStage) {
+      let isDragging = false;
+      let lastX = 0;
+      showroomStage.addEventListener(
+        'pointerdown',
+        (e) => {
+          isDragging = true;
+          lastX = e.clientX;
+          showroomStage.setPointerCapture(e.pointerId);
+        },
+        options,
+      );
+      showroomStage.addEventListener(
+        'pointermove',
+        (e) => {
+          if (!isDragging) return;
+          const dx = e.clientX - lastX;
+          lastX = e.clientX;
+          this.game?.rotateShowroom(dx);
+        },
+        options,
+      );
+      const stopDrag = (e: PointerEvent) => {
+        if (isDragging) {
+          isDragging = false;
+          this.game?.endShowroomDrag();
+          try {
+            showroomStage.releasePointerCapture(e.pointerId);
+          } catch {}
+        }
+      };
+      showroomStage.addEventListener('pointerup', stopDrag, options);
+      showroomStage.addEventListener('pointercancel', stopDrag, options);
+    }
 
     // Paint swatches & custom color picker
     document.querySelectorAll<HTMLElement>('.paint-swatch').forEach((swatch) => {
@@ -479,7 +512,11 @@ export class DrivingApplication {
     byId('calib-keyboard-btn').addEventListener('click', () => void this.useKeyboard(), options);
 
     // Post-race result buttons
-    byId('btn-results-again').addEventListener('click', () => void this.beginRun(this.currentModeId), options);
+    byId('btn-results-again').addEventListener(
+      'click',
+      () => void this.beginRun(this.currentModeId),
+      options,
+    );
     byId('btn-results-next').addEventListener('click', () => this.startNextRace(), options);
     byId('btn-results-garage').addEventListener('click', () => this.showView('garage'), options);
     byId('btn-results-menu').addEventListener('click', () => this.showView('home'), options);
@@ -505,7 +542,6 @@ export class DrivingApplication {
           this.audio.setEnabled(enabled);
           const muteBtn = byId<HTMLButtonElement>('mute-button');
           if (muteBtn) muteBtn.textContent = enabled ? 'SOUND ON' : 'SOUND OFF';
-          this.syncMenuSoundtrackUi();
         },
         onTestSound: () => this.audio.testSound(),
       },
@@ -542,7 +578,11 @@ export class DrivingApplication {
     byId('btn-reset-career').addEventListener(
       'click',
       () => {
-        if (window.confirm('Are you sure you want to reset all Rival Rush career progress, credits, and records?')) {
+        if (
+          window.confirm(
+            'Are you sure you want to reset all Rival Rush career progress, credits, and records?',
+          )
+        ) {
           progressionStore.resetProgress();
           this.updateCareerBadges();
           this.updateGarageUi();
@@ -561,27 +601,6 @@ export class DrivingApplication {
       },
       options,
     );
-
-    // Menu soundtrack banner
-    const menuSoundtrackBtn = document.getElementById('menu-soundtrack-btn');
-    if (menuSoundtrackBtn) {
-      menuSoundtrackBtn.addEventListener(
-        'click',
-        () => {
-          this.audio.toggleMenuMusic();
-          this.syncMenuSoundtrackUi();
-        },
-        options,
-      );
-    }
-    const unlockMenuAudio = () => {
-      if (this.game?.getPhase() !== 'playing' && this.game?.getPhase() !== 'racing') {
-        this.audio.startMenuMusic();
-        this.syncMenuSoundtrackUi();
-      }
-    };
-    window.addEventListener('pointerdown', unlockMenuAudio, { once: true, capture: true });
-    window.addEventListener('keydown', unlockMenuAudio, { once: true, capture: true });
 
     // In-game controls
     this.mainMenuButton.addEventListener('click', () => this.showView('home'), options);
@@ -650,7 +669,6 @@ export class DrivingApplication {
         (event.currentTarget as HTMLButtonElement).textContent = this.soundEnabled
           ? 'SOUND ON'
           : 'SOUND OFF';
-        this.syncMenuSoundtrackUi();
       },
       options,
     );
@@ -701,22 +719,22 @@ export class DrivingApplication {
       options,
     );
 
-    document.getElementById('settings-close')?.addEventListener(
-      'click',
-      () => this.closeGeneralSettings(),
-      options,
-    );
+    document
+      .getElementById('settings-close')
+      ?.addEventListener('click', () => this.closeGeneralSettings(), options);
 
-    document.getElementById('settings-backdrop')?.addEventListener(
-      'click',
-      () => this.closeGeneralSettings(),
-      options,
-    );
+    document
+      .getElementById('settings-backdrop')
+      ?.addEventListener('click', () => this.closeGeneralSettings(), options);
 
     document.getElementById('btn-reset-career')?.addEventListener(
       'click',
       () => {
-        if (confirm('Are you sure you want to reset all Rival Rush career progress, credits, and records?')) {
+        if (
+          confirm(
+            'Are you sure you want to reset all Rival Rush career progress, credits, and records?',
+          )
+        ) {
           progressionStore.resetProgress();
           window.location.reload();
         }
@@ -769,7 +787,7 @@ export class DrivingApplication {
       () => this.getControl(),
       (snapshot) => {
         this.lastSnapshot = snapshot;
-        this.hud.update(snapshot, this.getControl().steering);
+        this.hud.update(snapshot, snapshot.steering ?? 0);
         this.radarHud.update(snapshot.radar);
         this.audio.update(
           snapshot.speedKph,
@@ -961,13 +979,17 @@ export class DrivingApplication {
       }
       if (
         this.handController.getStatus() !== 'tracking' &&
-        this.handController.getStatus() !== 'calibrating'
+        this.handController.getStatus() !== 'calibrating' &&
+        this.handController.getStatus() !== 'ready'
       ) {
         try {
           await this.handController.start();
         } catch {
           this.setTracking('CAMERA UNAVAILABLE', 'off');
         }
+      }
+      if (this.video && this.video.paused) {
+        void this.video.play().catch(() => {});
       }
     }
 
@@ -1024,8 +1046,7 @@ export class DrivingApplication {
     if (this.mode === 'hands') {
       if (label) label.textContent = 'INPUT: HAND TRACKING';
       if (pill) {
-        pill.dataset.state =
-          this.handController?.getStatus() === 'tracking' ? 'ok' : 'warn';
+        pill.dataset.state = this.handController?.getStatus() === 'tracking' ? 'ok' : 'warn';
       }
       if (heroCtrl) heroCtrl.textContent = 'WEBCAM HAND TRACKING';
       if (select) select.value = 'hands';
@@ -1073,19 +1094,33 @@ export class DrivingApplication {
         posBadge.className = 'results-position-badge is-gold';
       }
       if (trophy) trophy.textContent = '🏆';
-      if (subtitle) subtitle.textContent = 'Flawless execution on the asphalt. The podium is yours!';
-    } else {
-      const isDefeat = this.currentModeId === 'rival_race' || result.health <= 0;
-      if (headline) headline.textContent = isDefeat ? 'RACE ENDED' : 'RACE COMPLETED!';
+      if (subtitle)
+        subtitle.textContent = 'Flawless execution on the asphalt. The podium is yours!';
+    } else if (result.health <= 0) {
+      if (headline) headline.textContent = 'VEHICLE CRASHED';
       if (posBadge) {
-        posBadge.textContent = result.finishPosition === 2 ? '2ND PLACE' : 'COMPLETED';
+        posBadge.textContent = 'CRASHED · DNF';
         posBadge.className = 'results-position-badge is-silver';
       }
-      if (trophy) trophy.textContent = result.finishPosition === 2 ? '🥈' : '🏁';
+      if (trophy) trophy.textContent = '💥';
       if (subtitle) {
-        subtitle.textContent = isDefeat
-          ? 'Tough break on the asphalt. Refocus, upgrade, and take revenge.'
-          : 'Solid drive. Credits earned have been credited to your career account.';
+        subtitle.textContent =
+          'Critical collision damage sustained. Refocus, avoid roadblocks, and restart the run.';
+      }
+    } else {
+      const isRivalLoss =
+        (this.currentModeId === 'rival_race' || this.currentModeId === 'championship') &&
+        result.finishPosition === 2;
+      if (headline) headline.textContent = isRivalLoss ? '2ND PLACE' : 'TIME EXPIRED';
+      if (posBadge) {
+        posBadge.textContent = isRivalLoss ? '2ND PLACE · RUNNER UP' : 'TIME EXPIRED · DNF';
+        posBadge.className = 'results-position-badge is-silver';
+      }
+      if (trophy) trophy.textContent = isRivalLoss ? '🥈' : '⏱️';
+      if (subtitle) {
+        subtitle.textContent = isRivalLoss
+          ? 'The rival crossed the line ahead. Upgrade your top speed and take revenge!'
+          : 'The countdown clock ran out before reaching the finish line. Push for faster lap times!';
       }
     }
 
@@ -1120,7 +1155,13 @@ export class DrivingApplication {
   }
 
   private startNextRace(): void {
-    const list: RaceModeId[] = ['endless', 'time_attack', 'traffic_challenge', 'rival_race', 'championship'];
+    const list: RaceModeId[] = [
+      'endless',
+      'time_attack',
+      'traffic_challenge',
+      'rival_race',
+      'championship',
+    ];
     const currIdx = list.indexOf(this.currentModeId);
     const nextMode = list[(currIdx + 1) % list.length];
     void this.beginRun(nextMode);
@@ -1130,10 +1171,11 @@ export class DrivingApplication {
     this.audio.setPlaying(false);
     const snapshot = this.lastSnapshot;
     const score = snapshot?.score ?? 0;
+    const hasRival = this.currentModeId === 'rival_race' || this.currentModeId === 'championship';
 
     this.onRaceFinish({
       won: false,
-      finishPosition: 2,
+      finishPosition: hasRival ? 2 : 1,
       completionTimeSeconds: snapshot?.raceTimeSeconds ?? 0,
       distanceMeters: snapshot?.distance ?? 0,
       maxSpeedKph: Math.round(snapshot?.speedKph ?? 0),
@@ -1313,7 +1355,8 @@ export class DrivingApplication {
 
   private openGraphicsSettings(): void {
     if (this.graphicsSettings.isOpen()) return;
-    this.resumeAfterGraphics = this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing';
+    this.resumeAfterGraphics =
+      this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing';
     if (this.resumeAfterGraphics) {
       this.game?.pause();
       this.audio.setPlaying(false);
@@ -1335,7 +1378,8 @@ export class DrivingApplication {
 
   private openSoundSettings(): void {
     if (this.soundSettings.isOpen()) return;
-    this.resumeAfterSound = this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing';
+    this.resumeAfterSound =
+      this.game?.getPhase() === 'playing' || this.game?.getPhase() === 'racing';
     if (this.resumeAfterSound) {
       this.game?.pause();
       this.audio.setPlaying(false);
@@ -1353,21 +1397,6 @@ export class DrivingApplication {
       this.pauseButton.textContent = 'PAUSE';
     }
     this.resumeAfterSound = false;
-  }
-
-  private syncMenuSoundtrackUi(): void {
-    const btn = document.getElementById('menu-soundtrack-btn');
-    const badge = document.getElementById('soundtrack-badge');
-    const subtitle = document.getElementById('soundtrack-subtitle');
-    if (!btn || !badge) return;
-    const active = this.audio.isMenuMusicActive();
-    btn.classList.toggle('is-muted', !active);
-    badge.textContent = active ? 'PLAYING' : 'MUTED';
-    if (subtitle) {
-      subtitle.textContent = active
-        ? 'AUTHENTIC ENGINE PREVIEWS & AMBIENT CHORDS ACTIVE'
-        : 'CLICK TO PLAY REALISTIC MENU SOUNDTRACK';
-    }
   }
 
   private updateWeatherButton(mode?: string): void {
@@ -1390,8 +1419,7 @@ export class DrivingApplication {
     }
     const compactLabel = this.headlightButton.querySelector('.headlight-button-label-compact');
     if (compactLabel) {
-      compactLabel.textContent =
-        mode === 'auto' ? 'LGT-A' : mode === 'on' ? 'LGT-ON' : 'LGT-OFF';
+      compactLabel.textContent = mode === 'auto' ? 'LGT-A' : mode === 'on' ? 'LGT-ON' : 'LGT-OFF';
     }
     this.headlightButton.classList.toggle('is-off', mode === 'off');
     this.headlightButton.setAttribute(

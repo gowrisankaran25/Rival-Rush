@@ -983,121 +983,6 @@ h2 {
   outline: 1px solid var(--acid);
   outline-offset: 1px;
 }
-.menu-soundtrack-banner {
-  margin: 4px 0 10px;
-}
-.menu-soundtrack-btn {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 12px;
-  border: 1px solid rgba(233, 255, 66, 0.35);
-  background: linear-gradient(90deg, rgba(233, 255, 66, 0.08), rgba(0, 0, 0, 0.55));
-  color: #fff;
-  cursor: pointer;
-  text-align: left;
-  transition:
-    transform 0.18s,
-    filter 0.18s,
-    border-color 0.18s,
-    background 0.18s;
-  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-}
-.menu-soundtrack-btn:hover {
-  border-color: var(--acid);
-  background: linear-gradient(90deg, rgba(233, 255, 66, 0.16), rgba(0, 0, 0, 0.7));
-  transform: translateY(-1px);
-}
-.menu-soundtrack-btn:focus-visible {
-  outline: 1px solid var(--acid);
-  outline-offset: 2px;
-}
-.music-pulse-icon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
-  border-radius: 50%;
-  background: rgba(233, 255, 66, 0.16);
-  border: 1px solid var(--acid);
-  color: var(--acid);
-  font-size: 14px;
-  animation: pulseMusic 2s infinite ease-in-out;
-}
-.music-pulse-icon i {
-  font-style: normal;
-  line-height: 1;
-}
-@keyframes pulseMusic {
-  0%,
-  100% {
-    transform: scale(1);
-    box-shadow: 0 0 0 rgba(233, 255, 66, 0);
-  }
-  50% {
-    transform: scale(1.08);
-    box-shadow: 0 0 10px rgba(233, 255, 66, 0.45);
-  }
-}
-.soundtrack-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1 1 auto;
-  min-width: 0;
-}
-.soundtrack-info strong {
-  font:
-    700 9px/1.2 'DM Mono',
-    monospace;
-  color: var(--acid);
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.soundtrack-info small {
-  font:
-    500 7px/1.3 'DM Mono',
-    monospace;
-  color: rgba(255, 255, 255, 0.62);
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.soundtrack-badge {
-  padding: 3px 7px;
-  border: 1px solid var(--acid);
-  background: rgba(233, 255, 66, 0.2);
-  color: var(--acid);
-  font:
-    700 8px 'DM Mono',
-    monospace;
-  letter-spacing: 0.1em;
-  flex: 0 0 auto;
-}
-.menu-soundtrack-btn.is-muted {
-  border-color: rgba(255, 255, 255, 0.16);
-  background: rgba(255, 255, 255, 0.03);
-}
-.menu-soundtrack-btn.is-muted .music-pulse-icon {
-  animation: none;
-  border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.4);
-}
-.menu-soundtrack-btn.is-muted .soundtrack-info strong {
-  color: rgba(255, 255, 255, 0.7);
-}
-.menu-soundtrack-btn.is-muted .soundtrack-badge {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.45);
-}
 .traffic-performance-note {
   display: flex;
   align-items: center;
@@ -1998,9 +1883,13 @@ h2 {
   overflow: hidden;
   border: 1px solid rgba(233, 255, 66, 0.45);
   background: #080c11;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7), 0 0 14px rgba(233, 255, 66, 0.15);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.7),
+    0 0 14px rgba(233, 255, 66, 0.15);
   border-radius: 6px;
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 .calibrate-camera-box {
@@ -2647,8 +2536,8 @@ h2 {
   color: #a0aec0;
 }
 
-.tracking-pill[data-state="calibrated"],
-.tracking-pill[data-state="ready"] {
+.tracking-pill[data-state='calibrated'],
+.tracking-pill[data-state='ready'] {
   border-color: rgba(0, 229, 255, 0.5);
   color: #00e5ff;
 }
@@ -2660,8 +2549,8 @@ h2 {
   background: #718096;
 }
 
-.tracking-pill[data-state="calibrated"] .status-dot,
-.tracking-pill[data-state="ready"] .status-dot {
+.tracking-pill[data-state='calibrated'] .status-dot,
+.tracking-pill[data-state='ready'] .status-dot {
   background: #00e5ff;
   box-shadow: 0 0 8px #00e5ff;
 }
@@ -2764,12 +2653,18 @@ h2 {
   z-index: 10;
   overflow-y: auto;
   overflow-x: hidden;
-  background: radial-gradient(circle at 75% 45%, rgba(10, 14, 20, 0.5) 0%, rgba(8, 12, 17, 0.92) 80%);
+  background: radial-gradient(
+    circle at 75% 45%,
+    rgba(10, 14, 20, 0.5) 0%,
+    rgba(8, 12, 17, 0.92) 80%
+  );
   display: flex;
   flex-direction: column;
   padding: 72px 32px 32px 32px;
   backdrop-filter: blur(4px);
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition:
+    opacity 0.25s ease,
+    transform 0.25s ease;
 }
 
 .launcher-view.is-hidden {
@@ -2828,9 +2723,18 @@ h2 {
 }
 
 @keyframes pulse {
-  0% { transform: scale(0.95); opacity: 0.6; }
-  50% { transform: scale(1.3); opacity: 1; }
-  100% { transform: scale(0.95); opacity: 0.6; }
+  0% {
+    transform: scale(0.95);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.3);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.6;
+  }
 }
 
 .hero-title {
@@ -2862,7 +2766,7 @@ h2 {
   line-height: 1.5;
   color: #a2adb9;
   margin: 0 0 28px 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .hero-actions {
@@ -2914,17 +2818,36 @@ h2 {
 }
 
 /* ── Screen 2: Vehicle Garage ── */
+#view-garage.launcher-view {
+  background: linear-gradient(
+    90deg,
+    rgba(8, 12, 17, 0.94) 0%,
+    rgba(8, 12, 17, 0.88) 35%,
+    rgba(8, 12, 17, 0.45) 55%,
+    rgba(8, 12, 17, 0.08) 75%,
+    transparent 100%
+  );
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 .garage-container {
-  max-width: 1400px;
+  max-width: 1440px;
   margin: 0 auto;
   width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .garage-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
 }
 
 .garage-header h2 {
@@ -2936,20 +2859,105 @@ h2 {
 
 .garage-layout {
   display: flex;
-  justify-content: flex-start;
-  align-items: flex-end;
-  min-height: calc(100vh - 200px);
+  justify-content: space-between;
+  align-items: stretch;
+  flex: 1;
+  min-height: calc(100vh - 160px);
+  position: relative;
+  gap: 32px;
 }
 
 .garage-controls-panel {
-  max-width: 500px;
+  max-width: 480px;
   width: 100%;
-  background: rgba(10, 14, 20, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 8px;
-  padding: 28px;
-  backdrop-filter: blur(14px);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.7);
+  background: rgba(10, 14, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 24px 26px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.75),
+    0 0 0 1px rgba(255, 255, 255, 0.05);
+  z-index: 2;
+  align-self: flex-start;
+}
+
+/* 3D Showroom Interactive Stage */
+.garage-showroom-stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  position: relative;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  padding-bottom: 32px;
+  min-height: 480px;
+}
+
+.garage-showroom-stage:active {
+  cursor: grabbing;
+}
+
+.showroom-callout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 20px;
+  background: rgba(8, 12, 17, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: none;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+}
+
+.showroom-badge {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: var(--acid);
+  text-transform: uppercase;
+}
+
+.showroom-hint {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #c0cad4;
+}
+
+.showroom-podium-ring {
+  position: absolute;
+  bottom: 80px;
+  width: 380px;
+  height: 90px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(233, 255, 66, 0.35);
+  box-shadow:
+    0 0 40px rgba(233, 255, 66, 0.15),
+    inset 0 0 25px rgba(233, 255, 66, 0.08);
+  pointer-events: none;
+  transform: rotateX(68deg);
+  animation: showroom-ring-spin 24s linear infinite;
+}
+
+@keyframes showroom-ring-spin {
+  from {
+    transform: rotateX(68deg) rotate(0deg);
+  }
+  to {
+    transform: rotateX(68deg) rotate(360deg);
+  }
 }
 
 .car-carousel-nav {
@@ -3015,7 +3023,7 @@ h2 {
   line-height: 1.4;
   color: #929ea9;
   margin: 0 0 20px 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .vehicle-specs-grid {
@@ -3089,7 +3097,9 @@ h2 {
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.2);
   cursor: pointer;
-  transition: transform 0.15s, border-color 0.15s;
+  transition:
+    transform 0.15s,
+    border-color 0.15s;
 }
 
 .paint-swatch:hover {
@@ -3112,7 +3122,7 @@ h2 {
   color: #a2adb9;
 }
 
-.custom-color-row input[type="color"] {
+.custom-color-row input[type='color'] {
   border: 1px solid rgba(255, 255, 255, 0.3);
   border-radius: 4px;
   width: 38px;
@@ -3123,11 +3133,19 @@ h2 {
 
 .garage-action-row {
   display: flex;
-  gap: 10px;
+  width: 100%;
 }
 
 .garage-action-row .primary-button {
   flex: 1;
+  width: 100%;
+  height: 48px;
+  font-size: 16px;
+  letter-spacing: 0.1em;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .primary-button.is-selected {
@@ -3249,7 +3267,7 @@ h2 {
   color: #929ea9;
   margin: 0 0 18px 0;
   flex: 1;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .mode-specs {
@@ -3314,7 +3332,7 @@ h2 {
   font-size: 15px;
   color: #9aa7b5;
   margin: 0 0 24px 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .calibrate-status-badge {
@@ -3515,7 +3533,7 @@ h2 {
   line-height: 1.35;
   color: #8c97a4;
   margin: 0 0 8px 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .achievement-status {
@@ -3554,7 +3572,9 @@ h2 {
   padding: 40px;
   backdrop-filter: blur(16px);
   text-align: center;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 40px rgba(233, 255, 66, 0.15);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.8),
+    0 0 40px rgba(233, 255, 66, 0.15);
   clip-path: polygon(0 0, 100% 0, 100% calc(100% - 24px), calc(100% - 24px) 100%, 0 100%);
 }
 
@@ -3570,9 +3590,17 @@ h2 {
 }
 
 @keyframes bounce {
-  0% { transform: scale(0.3); opacity: 0; }
-  60% { transform: scale(1.2); }
-  100% { transform: scale(1); opacity: 1; }
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 .results-banner-wrapper h2 {
@@ -3609,7 +3637,7 @@ h2 {
   font-size: 15px;
   color: #a2adb9;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .results-stats-grid {
@@ -3801,20 +3829,33 @@ h2 {
   font-size: 140px;
   font-weight: 900;
   color: var(--acid);
-  text-shadow: 0 0 50px var(--acid), 0 0 100px var(--acid);
+  text-shadow:
+    0 0 50px var(--acid),
+    0 0 100px var(--acid);
   animation: countdownPop 0.85s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
 .countdown-number.num-0 {
   color: #58ffc2;
-  text-shadow: 0 0 60px #58ffc2, 0 0 120px #58ffc2;
+  text-shadow:
+    0 0 60px #58ffc2,
+    0 0 120px #58ffc2;
   font-size: 160px;
 }
 
 @keyframes countdownPop {
-  0% { transform: scale(0.4); opacity: 0; }
-  40% { transform: scale(1.15); opacity: 1; }
-  100% { transform: scale(1); opacity: 0.95; }
+  0% {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
 }
 
 /* Approach Alert Banner */
@@ -3840,9 +3881,15 @@ h2 {
 }
 
 @keyframes alertPulse {
-  0% { transform: translateX(-50%) scale(0.98); }
-  50% { transform: translateX(-50%) scale(1.03); }
-  100% { transform: translateX(-50%) scale(0.98); }
+  0% {
+    transform: translateX(-50%) scale(0.98);
+  }
+  50% {
+    transform: translateX(-50%) scale(1.03);
+  }
+  100% {
+    transform: translateX(-50%) scale(0.98);
+  }
 }
 
 /* General Settings Modal additions */
@@ -3875,7 +3922,7 @@ h2 {
   display: block;
   font-size: 12px;
   color: #a2adb9;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 .danger-button {
@@ -3887,4 +3934,3 @@ h2 {
   background: #ff5555;
   color: #ffffff;
 }
-

@@ -133,4 +133,28 @@ describe('driving assistance', () => {
     );
     expect(icePlan.acceleration).toBeLessThan(dryPlan.acceleration);
   });
+
+  it('provides a standing launch boost when starting from a standstill', () => {
+    const standingPlan = createSpeedPlan(
+      { steering: 0, confidence: 1, active: true, accelerating: true },
+      0, // Standing start
+      GAME.maxSpeed,
+      { targetSpeed: GAME.maxSpeed, leadDistance: Infinity, leadIsIncoming: false },
+      GAME.maxSpeed,
+      1.0,
+      1.0,
+    );
+    const cruisingPlan = createSpeedPlan(
+      { steering: 0, confidence: 1, active: true, accelerating: true },
+      25, // Cruising speed
+      GAME.maxSpeed,
+      { targetSpeed: GAME.maxSpeed, leadDistance: Infinity, leadIsIncoming: false },
+      GAME.maxSpeed,
+      1.0,
+      1.0,
+    );
+
+    // Standing launch should be roughly 2x punchier than cruising acceleration
+    expect(standingPlan.acceleration).toBeGreaterThan(cruisingPlan.acceleration * 1.8);
+  });
 });

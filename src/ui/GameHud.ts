@@ -42,6 +42,8 @@ export class GameHud {
 
   hide(): void {
     this.root.classList.add('is-hidden');
+    this.countdownOverlay?.classList.add('is-hidden');
+    this.approachAlert?.classList.add('is-hidden');
   }
 
   update(snapshot: GameSnapshot, steering: number): void {
@@ -91,7 +93,8 @@ export class GameHud {
     if (this.countdownOverlay && this.countdownText) {
       if (snapshot.countdownValue !== null && snapshot.countdownValue !== undefined) {
         this.countdownOverlay.classList.remove('is-hidden');
-        this.countdownText.textContent = snapshot.countdownValue === 0 ? 'GO!' : String(snapshot.countdownValue);
+        this.countdownText.textContent =
+          snapshot.countdownValue === 0 ? 'GO!' : String(snapshot.countdownValue);
         this.countdownText.className = `countdown-number num-${snapshot.countdownValue}`;
       } else {
         this.countdownOverlay.classList.add('is-hidden');

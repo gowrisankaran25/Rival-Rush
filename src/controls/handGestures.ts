@@ -102,30 +102,23 @@ export function isIndexExtended(landmarks: HandPoint[]): boolean {
   const indexTip = landmarks[8];
   const indexMcp = landmarks[5];
   const middleTip = landmarks[12];
-  const middleMcp = landmarks[9];
   const ringTip = landmarks[16];
-  const ringMcp = landmarks[13];
   const pinkyTip = landmarks[20];
-  const pinkyMcp = landmarks[17];
 
   const indexTipDist = pointDistance(indexTip, wrist);
   const indexMcpDist = pointDistance(indexMcp, wrist);
 
   // Index must be clearly extended away from wrist
-  if (indexTipDist < indexMcpDist * 1.55) return false;
+  if (indexTipDist < indexMcpDist * 1.4) return false;
 
-  // Middle, ring, and pinky must remain folded (gripping the wheel)
+  // Index must extend significantly further than middle, ring, and pinky
   const middleTipDist = pointDistance(middleTip, wrist);
-  const middleMcpDist = pointDistance(middleMcp, wrist);
-  if (middleTipDist > middleMcpDist * 1.58) return false;
-
   const ringTipDist = pointDistance(ringTip, wrist);
-  const ringMcpDist = pointDistance(ringMcp, wrist);
-  if (ringTipDist > ringMcpDist * 1.58) return false;
-
   const pinkyTipDist = pointDistance(pinkyTip, wrist);
-  const pinkyMcpDist = pointDistance(pinkyMcp, wrist);
-  if (pinkyTipDist > pinkyMcpDist * 1.58) return false;
+
+  if (indexTipDist <= middleTipDist * 1.15) return false;
+  if (indexTipDist <= ringTipDist * 1.18) return false;
+  if (indexTipDist <= pinkyTipDist * 1.18) return false;
 
   return true;
 }

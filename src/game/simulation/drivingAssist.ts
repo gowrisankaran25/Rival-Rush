@@ -104,7 +104,10 @@ export function createSpeedPlan(
         acceleration = GAME.serviceBrake * brakeScale;
       } else {
         targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
-        acceleration = GAME.acceleration * accelMultiplier * tractionScale;
+        // Standing start launch boost ensures instantaneous response from 0 km/h
+        const launchBoost =
+          currentSpeed < 14 ? lerp(2.2, 1.0, clamp(currentSpeed / 14, 0, 1)) : 1.0;
+        acceleration = GAME.acceleration * accelMultiplier * tractionScale * launchBoost;
       }
     } else {
       targetSpeed = 0;
@@ -112,9 +115,10 @@ export function createSpeedPlan(
     }
   } else {
     targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
+    const launchBoost = currentSpeed < 14 ? lerp(2.2, 1.0, clamp(currentSpeed / 14, 0, 1)) : 1.0;
     acceleration =
       (targetSpeed > currentSpeed
-        ? GAME.acceleration * accelMultiplier * tractionScale
+        ? GAME.acceleration * accelMultiplier * tractionScale * launchBoost
         : isEmergency(leadDistance, leadIsIncoming)
           ? GAME.emergencyBrake
           : GAME.serviceBrake) * (targetSpeed > currentSpeed ? 1.0 : brakeScale);

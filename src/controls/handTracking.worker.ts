@@ -36,18 +36,18 @@ workerScope.onmessage = (event): void => {
             baseOptions: { modelAssetPath: message.modelAssetPath, delegate: 'GPU' },
             runningMode: 'VIDEO',
             numHands: 2,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.45,
-            minTrackingConfidence: 0.45,
+            minHandDetectionConfidence: 0.3,
+            minHandPresenceConfidence: 0.3,
+            minTrackingConfidence: 0.3,
           });
         } catch {
           landmarkerInstance = await HandLandmarker.createFromOptions(vision, {
             baseOptions: { modelAssetPath: message.modelAssetPath, delegate: 'CPU' },
             runningMode: 'VIDEO',
             numHands: 2,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.45,
-            minTrackingConfidence: 0.45,
+            minHandDetectionConfidence: 0.3,
+            minHandPresenceConfidence: 0.3,
+            minTrackingConfidence: 0.3,
           });
         }
         landmarker = landmarkerInstance;

@@ -1,7 +1,4 @@
-import {
-  DEFAULT_CAR_MODEL_ID,
-  VEHICLE_SPECS,
-} from '../game/vehicleCatalog';
+import { DEFAULT_CAR_MODEL_ID, VEHICLE_SPECS } from '../game/vehicleCatalog';
 import { RACE_MODE_LIST } from '../game/progression/raceModes';
 import { ACHIEVEMENTS_LIST, MOTORSPORT_PRESET_PAINTS } from '../services/progressionStore';
 
@@ -138,17 +135,6 @@ export function createGameTemplate(): string {
                 <strong id="hero-credits-val">1,500 CR</strong>
               </div>
             </div>
-
-            <div class="menu-soundtrack-banner">
-              <button id="menu-soundtrack-btn" class="menu-soundtrack-btn" type="button" aria-label="Toggle realistic menu soundtrack">
-                <span class="music-pulse-icon"><i>♪</i></span>
-                <span class="soundtrack-info">
-                  <strong>ATMOSPHERIC MOTORSPORT SOUNDTRACK</strong>
-                  <small id="soundtrack-subtitle">AUTHENTIC ENGINE PREVIEWS & AMBIENT CHORDS ACTIVE</small>
-                </span>
-                <span id="soundtrack-badge" class="soundtrack-badge">PLAYING</span>
-              </button>
-            </div>
           </div>
         </div>
       </section>
@@ -210,14 +196,20 @@ export function createGameTemplate(): string {
                 </div>
 
                 <div class="garage-action-row">
-                  <button id="garage-select-btn" class="primary-button" type="button">
+                  <button id="garage-select-btn" class="primary-button is-full-width" type="button">
                     <span>SELECT CAR</span>
-                  </button>
-                  <button id="garage-test-engine-btn" class="secondary-button" type="button" title="Rev Engine">
-                    <i>🔊</i> REV ENGINE
                   </button>
                 </div>
               </div>
+            </div>
+
+            <!-- Interactive 3D Vehicle Showcase Stage -->
+            <div class="garage-showroom-stage" id="garage-showroom-stage" role="region" aria-label="3D Car Showroom. Drag to rotate vehicle 360 degrees.">
+              <div class="showroom-callout">
+                <span class="showroom-badge">✦ 3D SHOWROOM STUDIO</span>
+                <span class="showroom-hint">DRAG TO ROTATE 360° · REAL-TIME 3D PREVIEW</span>
+              </div>
+              <div class="showroom-podium-ring" aria-hidden="true"></div>
             </div>
           </div>
         </div>
@@ -270,7 +262,7 @@ export function createGameTemplate(): string {
               <div class="inst-item"><b>01</b><span>Allow camera access in your browser</span></div>
               <div class="inst-item"><b>02</b><span>Turn two fists like a steering wheel</span></div>
               <div class="inst-item"><b>03</b><span>Raise right index finger to boost speed</span></div>
-              <div class="inst-item"><b>04</b><span>Raise thumbs to brake, open palms to stop</span></div>
+              <div class="inst-item"><b>04</b><span>Raise thumbs to brake</span></div>
             </div>
 
             <div class="calibrate-actions">

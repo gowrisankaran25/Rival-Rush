@@ -114,5 +114,5 @@ export interface GameSnapshot {
   countdownValue?: number | null; // 3, 2, 1, 0 (GO)
   approachWarning?: string | null; // '500M', '300M', '100M', etc.
   raceModeName?: string;
+  steering?: number;
 }
-
