@@ -130,6 +130,8 @@ export interface ProgressionData {
   selectedMode: RaceModeId;
   selectedCameraMode: number;
   selectedControlMode: 'hands' | 'keyboard';
+  selectedTransmissionMode: 'manual' | 'auto';
+  gestureShiftingEnabled: boolean;
   records: PlayerRecords;
   achievements: Record<string, { unlocked: boolean; unlockedAt: string }>;
   stats: PlayerStats;
@@ -164,6 +166,8 @@ function createInitialProgression(): ProgressionData {
     selectedMode: 'endless',
     selectedCameraMode: 1,
     selectedControlMode: 'hands',
+    selectedTransmissionMode: 'manual',
+    gestureShiftingEnabled: true,
     records: {
       endless: {
         maxDistanceMeters: 0,
@@ -347,6 +351,24 @@ export class ProgressionStore {
 
   getSelectedCameraMode(): number {
     return this.data.selectedCameraMode;
+  }
+
+  setSelectedTransmissionMode(mode: 'manual' | 'auto'): void {
+    this.data.selectedTransmissionMode = mode;
+    this.save();
+  }
+
+  getSelectedTransmissionMode(): 'manual' | 'auto' {
+    return this.data.selectedTransmissionMode ?? 'manual';
+  }
+
+  setGestureShiftingEnabled(enabled: boolean): void {
+    this.data.gestureShiftingEnabled = enabled;
+    this.save();
+  }
+
+  isGestureShiftingEnabled(): boolean {
+    return this.data.gestureShiftingEnabled ?? true;
   }
 
   /**

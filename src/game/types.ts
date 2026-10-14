@@ -103,6 +103,7 @@ export interface GameSnapshot {
   currentGear?: number;
   gearLabel?: string;
   gearMaxKph?: number;
+  transmissionMode?: 'auto' | 'manual';
   radar?: RadarTelemetry;
   roadCondition?: RoadCondition;
   headlightMode?: HeadlightMode;

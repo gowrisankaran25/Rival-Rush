@@ -269,6 +269,9 @@ export function createGameTemplate(): string {
               <button id="calib-start-btn" class="primary-button" type="button" disabled>
                 <span>START DRIVING</span><i>→</i>
               </button>
+              <button id="calib-retry-btn" class="secondary-button is-hidden" type="button">
+                <span>RETRY CAMERA</span><i>↻</i>
+              </button>
               <button id="calib-keyboard-btn" class="secondary-button" type="button">
                 <span>SWITCH TO KEYBOARD CONTROLS</span>
               </button>
@@ -399,6 +402,9 @@ export function createGameTemplate(): string {
             <span id="gear-name">3RD</span>
             <button id="gear-up-btn" class="gear-btn" type="button" aria-label="Shift gear up" title="Shift Up (Right Paddle / E / Shift)">+</button>
           </div>
+          <button id="gear-mode-btn" class="gear-mode-toggle" type="button" aria-label="Toggle Transmission Mode (T)" title="Toggle Automatic / Manual Transmission (T)">
+            <span id="gear-mode-badge" class="gear-mode-badge">MT</span>
+          </button>
         </div>
 
         <div class="race-timer-panel">
@@ -585,6 +591,20 @@ export function createGameTemplate(): string {
                 <option value="2">FAR CHASE (AERIAL)</option>
                 <option value="3">HOOD (BONNET MOUNT)</option>
                 <option value="4">BUMPER (LOW ROAD)</option>
+              </select>
+            </label>
+            <label class="graphics-setting-row" for="settings-transmission-mode">
+              <span><strong>TRANSMISSION TYPE</strong><small>Manual sequential vs smooth dynamic auto</small></span>
+              <select id="settings-transmission-mode">
+                <option value="manual">MANUAL (RECOMMENDED FOR GESTURE CONTROL)</option>
+                <option value="auto">AUTOMATIC (SMOOTH DYNAMIC SHIFT)</option>
+              </select>
+            </label>
+            <label class="graphics-setting-row" for="settings-gesture-shift">
+              <span><strong>GESTURE PADDLE SHIFTING</strong><small>Extended index finger gear control</small></span>
+              <select id="settings-gesture-shift">
+                <option value="enabled">ENABLED (SUSTAINED INDEX PADDLE)</option>
+                <option value="disabled">DISABLED (STEER-ONLY SMOOTH CONTROL)</option>
               </select>
             </label>
             <div class="danger-zone-card">

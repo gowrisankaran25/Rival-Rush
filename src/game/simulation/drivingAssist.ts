@@ -103,7 +103,9 @@ export function createSpeedPlan(
         targetSpeed = 0;
         acceleration = GAME.serviceBrake * brakeScale;
       } else {
-        targetSpeed = Math.min(targetSpeed, maxAllowedSpeed);
+        const emergency = isEmergency(leadDistance, leadIsIncoming);
+        targetSpeed = emergency ? Math.min(threat.targetSpeed, maxAllowedSpeed) : maxAllowedSpeed;
+        safetyBraking = emergency;
         // Standing start launch boost ensures instantaneous response from 0 km/h
         const launchBoost =
           currentSpeed < 14 ? lerp(2.2, 1.0, clamp(currentSpeed / 14, 0, 1)) : 1.0;

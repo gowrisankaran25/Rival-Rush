@@ -21,6 +21,8 @@ export class GameHud {
   private readonly steering = byId<HTMLElement>('steer-indicator');
   private readonly gearIndicator = document.getElementById('gear-indicator');
   private readonly gearName = document.getElementById('gear-name');
+  private readonly gearModeBtn = document.getElementById('gear-mode-btn');
+  private readonly gearModeBadge = document.getElementById('gear-mode-badge');
   private readonly roadConditionBadge = document.getElementById('road-condition-badge');
   private readonly roadConditionIcon = document.getElementById('road-condition-icon');
   private readonly roadConditionText = document.getElementById('road-condition-text');
@@ -61,6 +63,17 @@ export class GameHud {
     }
     if (this.gearName && snapshot.gearLabel) {
       this.gearName.textContent = snapshot.gearLabel;
+    }
+    if (this.gearModeBadge && snapshot.transmissionMode) {
+      const isAuto = snapshot.transmissionMode === 'auto';
+      this.gearModeBadge.textContent = isAuto ? 'AT' : 'MT';
+      this.gearModeBtn?.classList.toggle('is-auto', isAuto);
+      this.gearModeBtn?.setAttribute(
+        'title',
+        isAuto
+          ? 'Transmission: Automatic (Click or Press T for Manual)'
+          : 'Transmission: Manual (Click or Press T for Automatic)',
+      );
     }
 
     // Race timer

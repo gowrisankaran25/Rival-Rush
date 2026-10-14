@@ -60,12 +60,18 @@ export class HandController {
   private calibrationAngles: number[] = [];
   private input: ControlInput = { steering: 0, confidence: 0, active: false };
   private readonly brakeGesture = new SustainedGesture(BRAKE_GESTURE_HOLD_MS);
-  private wasRightIndexExtended = false;
-  private wasLeftIndexExtended = false;
+  private readonly rightPaddleGesture = new SustainedGesture(140);
+  private readonly leftPaddleGesture = new SustainedGesture(140);
+  private wasRightPaddleTriggered = false;
+  private wasLeftPaddleTriggered = false;
+  private gestureShiftingEnabled = true;
   private lastGearShiftTime = 0;
   private pendingGearShift?: 1 | -1;
   private status: TrackingStatus = 'idle';
   private lastSeen = 0;
+  private lastTwoHandSeenTime = 0;
+  private singleHandFrames = 0;
+  private lastRawSteering = 0;
   private previewVisible = true;
   private lastPreviewTime = 0;
   private previewContext: CanvasRenderingContext2D | null = null;
@@ -82,13 +88,48 @@ export class HandController {
     this.stopped = false;
     this.setStatus('loading');
     try {
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
-        audio: false,
-      });
+      if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+        throw new Error(
+          'Webcam access is unavailable. Please ensure you are running on localhost or HTTPS.',
+        );
+      }
+
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+          audio: false,
+        });
+      } catch (primaryError) {
+        // Fallback to basic video constraint if ideal dimensions failed or device is busy
+        if (
+          primaryError instanceof DOMException &&
+          primaryError.name !== 'NotAllowedError' &&
+          primaryError.name !== 'PermissionDeniedError'
+        ) {
+          this.stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        } else {
+          throw primaryError;
+        }
+      }
+
       this.video.srcObject = this.stream;
-      await this.video.play();
-      if (this.stopped) return;
+      this.video.muted = true;
+      this.video.playsInline = true;
+      try {
+        await this.video.play();
+      } catch (playError) {
+        console.warn('Video play deferred or interrupted.', playError);
+      }
+
+      if (this.stopped) {
+        this.stream?.getTracks().forEach((track) => track.stop());
+        this.stream = null;
+        if (this.video) this.video.srcObject = null;
+        return;
+      }
 
       const wasmRoot = new URL(`${import.meta.env.BASE_URL}mediapipe/wasm`, window.location.href)
         .href;
@@ -114,6 +155,9 @@ export class HandController {
       this.beginCalibration();
       this.scheduleNextFrame();
     } catch (error) {
+      this.stream?.getTracks().forEach((track) => track.stop());
+      this.stream = null;
+      if (this.video) this.video.srcObject = null;
       if (this.stopped) return;
       console.warn('Hand tracking unavailable:', error);
       this.setStatus('error');
@@ -237,6 +281,17 @@ export class HandController {
     return this.previewVisible;
   }
 
+  setGestureShiftingEnabled(enabled: boolean): void {
+    this.gestureShiftingEnabled = enabled;
+    if (!enabled) {
+      this.resetGearGestures();
+    }
+  }
+
+  isGestureShiftingEnabled(): boolean {
+    return this.gestureShiftingEnabled;
+  }
+
   stop(): void {
     this.stopped = true;
     this.resetBrakeGesture();
@@ -248,6 +303,10 @@ export class HandController {
     this.worker = null;
     this.frameInFlight = false;
     this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream = null;
+    if (this.video) {
+      this.video.srcObject = null;
+    }
     this.landmarker?.close();
     this.landmarker = null;
   }
@@ -379,11 +438,15 @@ export class HandController {
 
   private consumeResult(result: HandTrackingResult): void {
     const now = performance.now();
+    const dt = clamp((now - (this.lastInferenceTime || now - 33)) / 1000, 0.016, 0.08);
+    this.lastInferenceTime = now;
+
     if (result.landmarks.length === 0) {
+      this.singleHandFrames = 0;
       if (now - this.lastSeen > DROPOUT_GRACE_MS) {
         this.resetBrakeGesture();
         this.input = {
-          steering: damp(this.input.steering, 0, 10, 1 / 30),
+          steering: damp(this.input.steering, 0, 8, dt),
           confidence: 0,
           active: false,
         };
@@ -392,8 +455,8 @@ export class HandController {
         // Momentary dropout within grace window: sustain momentum and gently center steering
         this.input = {
           ...this.input,
-          steering: damp(this.input.steering, 0, 3, 1 / 30),
-          confidence: Math.max(0.4, (this.input.confidence ?? 0.7) * 0.9),
+          steering: damp(this.input.steering, 0, 2.0, dt),
+          confidence: Math.max(0.4, (this.input.confidence ?? 0.7) * 0.95),
           active: true,
           accelerating: true,
         };
@@ -404,7 +467,25 @@ export class HandController {
     this.lastSeen = now;
 
     if (result.landmarks.length === 1) {
-      // Single-hand driving: smooth fallback so car keeps driving without sudden auto-braking
+      this.singleHandFrames += 1;
+      const wasTwoHandsRecently = now - this.lastTwoHandSeenTime < 500;
+
+      // If driver was using two hands, do NOT suddenly snap to single-hand lateral offset!
+      // Gracefully sustain momentum and gently stabilize steering.
+      if (wasTwoHandsRecently && this.singleHandFrames < 15) {
+        const smoothedSteering = damp(this.input.steering, 0, 1.8, dt);
+        this.input = {
+          ...this.input,
+          steering: smoothedSteering,
+          confidence: Math.max(0.4, (this.input.confidence ?? 0.7) * 0.95),
+          active: true,
+          accelerating: true,
+        };
+        if (this.status !== 'tracking') this.setStatus('tracking');
+        return;
+      }
+
+      // Sustained single-hand mode with gentle deadband:
       const handLandmarks = result.landmarks[0];
       const wrist = handLandmarks[0];
       const middleMcp = handLandmarks[9];
@@ -412,23 +493,16 @@ export class HandController {
         x: (wrist.x + middleMcp.x) * 0.5,
         y: (wrist.y + middleMcp.y) * 0.5,
       };
-      // Moving hand left/right across webcam view steers the vehicle
       const lateralOffset = palm.x - 0.5;
+      const deadzoneOffset =
+        Math.abs(lateralOffset) < 0.04 ? 0 : lateralOffset - Math.sign(lateralOffset) * 0.04;
       const wristTilt = Math.atan2(middleMcp.x - wrist.x, -(middleMcp.y - wrist.y));
-      const rawSteering = clamp(-lateralOffset * 2.5 + wristTilt * 0.8, -1, 1);
-      const smoothedSteering = damp(this.input.steering, rawSteering, 22.0, 1 / 30);
+      const rawSteering = clamp(-deadzoneOffset * 1.8 + wristTilt * 0.6, -1, 1);
+      const smoothedSteering = damp(this.input.steering, rawSteering, 10.0, dt);
       const score = result.handednessScores[0] ?? 0.7;
 
       const thumbBrake = isThumbUp(handLandmarks);
-      const braking = this.brakeGesture.update(thumbBrake, this.lastSeen);
-
-      // Single-hand paddle shift
-      const indexExt = isIndexExtended(handLandmarks);
-      if (indexExt && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 280) {
-        this.pendingGearShift = palm.x < 0.5 ? 1 : -1;
-        this.lastGearShiftTime = now;
-      }
-      this.wasRightIndexExtended = indexExt;
+      const braking = this.brakeGesture.update(thumbBrake, now);
 
       this.input = {
         steering: smoothedSteering,
@@ -441,6 +515,10 @@ export class HandController {
       if (this.status !== 'tracking') this.setStatus('tracking');
       return;
     }
+
+    // Two hands detected
+    this.lastTwoHandSeenTime = now;
+    this.singleHandFrames = 0;
 
     const hands = result.landmarks
       .slice(0, 2)
@@ -481,19 +559,26 @@ export class HandController {
     const angle = Math.atan2(hands[1].palm.y - hands[0].palm.y, hands[1].palm.x - hands[0].palm.x);
     const confidence = Math.min(hands[0].score, hands[1].score);
 
-    // Precise, linear steering response with minimal deadzone for micro-tremors
-    const raw = -steeringFromHands(hands[0].palm, hands[1].palm, this.neutralAngle, 0.025, 1.0);
+    // Natural steering response with deadzone for camera noise
+    let raw = -steeringFromHands(hands[0].palm, hands[1].palm, this.neutralAngle, 0.035, 1.0);
+
+    // Deadband tremor suppression: filter out micro-pixel tremors
+    const tremorDelta = Math.abs(raw - this.lastRawSteering);
+    if (tremorDelta < 0.016) {
+      raw = this.lastRawSteering;
+    } else {
+      this.lastRawSteering = raw;
+    }
 
     // Deliberate brake gesture: thumbs raised upward (thumb-up)
-    // Natural open palm or fist grip drives and accelerates smoothly!
     const thumbBraking = hands.some((hand) => hand.thumbUp);
     const rawBrakePressure = thumbBraking ? 1 : 0;
-    const braking = this.brakeGesture.update(rawBrakePressure > 0, this.lastSeen);
+    const braking = this.brakeGesture.update(rawBrakePressure > 0, now);
 
-    // Fast, responsive adaptive smoothing
+    // Adaptive smoothing: buttery smooth for straight roads (lambda ~9), responsive for sharp turns (lambda ~22)
     const steeringDelta = Math.abs(raw - this.input.steering);
-    const adaptiveLambda = lerp(20.0, 34.0, clamp((steeringDelta - 0.04) / 0.25, 0, 1));
-    const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, 1 / 30);
+    const adaptiveLambda = lerp(9.0, 22.0, clamp((steeringDelta - 0.05) / 0.25, 0, 1));
+    const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, dt);
 
     if (this.status === 'calibrating') {
       this.resetBrakeGesture();
@@ -519,22 +604,41 @@ export class HandController {
       return;
     }
 
-    // Paddle Shifter Gear Control Gestures:
+    // Paddle Shifter Gear Control Gestures (only when gesture shifting is enabled):
     // hands[0] = User's RIGHT hand in camera coordinates (smaller x in unmirrored feed)
     // hands[1] = User's LEFT hand in camera coordinates (larger x in unmirrored feed)
-    const rightIndex = isIndexExtended(hands[0].landmarks);
-    const leftIndex = isIndexExtended(hands[1].landmarks);
+    if (this.gestureShiftingEnabled) {
+      const rightIndex = isIndexExtended(hands[0].landmarks);
+      const leftIndex = isIndexExtended(hands[1].landmarks);
 
-    if (rightIndex && !this.wasRightIndexExtended && now - this.lastGearShiftTime > 280) {
-      this.pendingGearShift = 1;
-      this.lastGearShiftTime = now;
-    } else if (leftIndex && !this.wasLeftIndexExtended && now - this.lastGearShiftTime > 280) {
-      this.pendingGearShift = -1;
-      this.lastGearShiftTime = now;
+      const rightSustained = this.rightPaddleGesture.update(rightIndex, now);
+      const leftSustained = this.leftPaddleGesture.update(leftIndex, now);
+
+      if (rightSustained && !this.wasRightPaddleTriggered && now - this.lastGearShiftTime > 450) {
+        this.pendingGearShift = 1;
+        this.lastGearShiftTime = now;
+        this.wasRightPaddleTriggered = true;
+      } else if (
+        leftSustained &&
+        !this.wasLeftPaddleTriggered &&
+        now - this.lastGearShiftTime > 450
+      ) {
+        this.pendingGearShift = -1;
+        this.lastGearShiftTime = now;
+        this.wasLeftPaddleTriggered = true;
+      }
+
+      if (!rightIndex) {
+        this.rightPaddleGesture.reset();
+        this.wasRightPaddleTriggered = false;
+      }
+      if (!leftIndex) {
+        this.leftPaddleGesture.reset();
+        this.wasLeftPaddleTriggered = false;
+      }
+    } else {
+      this.resetGearGestures();
     }
-
-    this.wasRightIndexExtended = rightIndex;
-    this.wasLeftIndexExtended = leftIndex;
 
     this.input = {
       steering: smoothedSteering,
@@ -549,8 +653,14 @@ export class HandController {
 
   private resetBrakeGesture(): void {
     this.brakeGesture.reset();
-    this.wasRightIndexExtended = false;
-    this.wasLeftIndexExtended = false;
+    this.resetGearGestures();
+  }
+
+  private resetGearGestures(): void {
+    this.rightPaddleGesture.reset();
+    this.leftPaddleGesture.reset();
+    this.wasRightPaddleTriggered = false;
+    this.wasLeftPaddleTriggered = false;
     this.pendingGearShift = undefined;
   }
 

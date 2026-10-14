@@ -70,6 +70,8 @@ export class DrivingApplication {
   private modelCount = 1;
   private garageSelectedCarIndex = 0;
   private currentModeId: RaceModeId = 'endless';
+  private transmissionMode: 'auto' | 'manual' = 'manual';
+  private gestureShiftingEnabled = true;
 
   private assetsReady: Promise<boolean> = Promise.resolve(false);
   private sceneReady: Promise<boolean> = Promise.resolve(false);
@@ -86,6 +88,8 @@ export class DrivingApplication {
     this.mode = saved.selectedControlMode;
     this.currentModeId = saved.selectedMode;
     this.selectedCameraMode = saved.selectedCameraMode;
+    this.transmissionMode = saved.selectedTransmissionMode ?? 'manual';
+    this.gestureShiftingEnabled = saved.gestureShiftingEnabled ?? true;
 
     const carIndex = CAR_MODEL_OPTIONS.findIndex((c) => c.id === this.driverCar);
     this.garageSelectedCarIndex = carIndex >= 0 ? carIndex : 0;
@@ -509,6 +513,7 @@ export class DrivingApplication {
 
     // Hand tracking calibration buttons
     byId('calib-start-btn').addEventListener('click', () => void this.beginRun(), options);
+    byId('calib-retry-btn').addEventListener('click', () => void this.useHandControls(), options);
     byId('calib-keyboard-btn').addEventListener('click', () => void this.useKeyboard(), options);
 
     // Post-race result buttons
@@ -572,6 +577,26 @@ export class DrivingApplication {
           const modeName = this.game.setCameraMode(val);
           this.updateCameraButton(modeName);
         }
+      },
+      options,
+    );
+    byId<HTMLSelectElement>('settings-transmission-mode').addEventListener(
+      'change',
+      (e) => {
+        const val = (e.currentTarget as HTMLSelectElement).value as 'manual' | 'auto';
+        this.transmissionMode = val;
+        progressionStore.setSelectedTransmissionMode(val);
+        this.game?.setTransmissionMode(val);
+      },
+      options,
+    );
+    byId<HTMLSelectElement>('settings-gesture-shift').addEventListener(
+      'change',
+      (e) => {
+        const val = (e.currentTarget as HTMLSelectElement).value === 'enabled';
+        this.gestureShiftingEnabled = val;
+        progressionStore.setGestureShiftingEnabled(val);
+        this.handController?.setGestureShiftingEnabled(val);
       },
       options,
     );
@@ -657,6 +682,13 @@ export class DrivingApplication {
       'click',
       () => {
         this.game?.shiftGear(-1);
+      },
+      options,
+    );
+    byId('gear-mode-btn').addEventListener(
+      'click',
+      () => {
+        this.toggleTransmission();
       },
       options,
     );
@@ -817,6 +849,7 @@ export class DrivingApplication {
     if (this.selectedCameraMode !== 0) {
       game.setCameraMode(this.selectedCameraMode);
     }
+    game.setTransmissionMode(this.transmissionMode);
     game.setPerformanceMonitoring(this.performanceHud.isVisible());
     game.setGraphicsQuality(this.graphicsSettings.getMode());
     return game;
@@ -824,7 +857,16 @@ export class DrivingApplication {
 
   private getControl(): ControlInput {
     if (this.mode === 'hands') {
-      return this.handController?.getInput() ?? { steering: 0, confidence: 0, active: false };
+      const handInput = this.handController?.getInput();
+      if (handInput && (handInput.active || this.handController?.getStatus() === 'tracking')) {
+        return handInput;
+      }
+      // Seamless keyboard backup so player can still steer if camera tracking is temporarily lost
+      const kb = this.keyboard.getInput();
+      if (kb.active) {
+        return { ...kb, active: true };
+      }
+      return handInput ?? { steering: 0, confidence: 0, active: false };
     }
     return { ...this.keyboard.getInput(), active: true };
   }
@@ -874,8 +916,10 @@ export class DrivingApplication {
 
     const statusMsg = document.getElementById('calib-status-msg');
     const startBtn = document.getElementById('calib-start-btn') as HTMLButtonElement | null;
+    const retryBtn = document.getElementById('calib-retry-btn') as HTMLButtonElement | null;
     if (statusMsg) statusMsg.textContent = 'CONNECTING TO CAMERA...';
     if (startBtn) startBtn.disabled = true;
+    if (retryBtn) retryBtn.classList.add('is-hidden');
 
     this.setTracking('CONNECTING CAMERA', 'warn');
     this.cameraHint.textContent = 'CONNECTING CAMERA';
@@ -887,13 +931,35 @@ export class DrivingApplication {
       this.cameraCanvas,
       (status, progress = 0) => this.onHandStatus(status, progress),
     );
+    this.handController.setGestureShiftingEnabled(this.gestureShiftingEnabled);
 
     try {
       await this.handController.start();
-    } catch {
-      if (statusMsg) statusMsg.textContent = 'CAMERA UNAVAILABLE — SWITCHING TO KEYBOARD';
+      if (retryBtn) retryBtn.classList.add('is-hidden');
+    } catch (error) {
+      let friendlyMessage = 'CAMERA UNAVAILABLE — CHECK PERMISSIONS & RETRY';
+      if (error instanceof DOMException) {
+        if (
+          error.name === 'NotReadableError' ||
+          error.message?.includes('in use') ||
+          error.message?.includes('Device in use')
+        ) {
+          friendlyMessage =
+            'WEBCAM IN USE BY ANOTHER APP — CLOSE ZOOM / TEAMS / DISCORD & CLICK RETRY';
+        } else if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+          friendlyMessage =
+            'CAMERA PERMISSION BLOCKED — CLICK URL BAR LOCK ICON TO ALLOW CAMERA & RETRY';
+        } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+          friendlyMessage = 'NO WEBCAM DETECTED — CONNECT A CAMERA & CLICK RETRY';
+        }
+      }
+      if (statusMsg) statusMsg.textContent = friendlyMessage;
       this.setTracking('CAMERA UNAVAILABLE', 'off');
-      setTimeout(() => void this.useKeyboard(), 1200);
+      this.cameraHint.textContent = 'CAMERA UNAVAILABLE';
+      if (retryBtn) {
+        retryBtn.classList.remove('is-hidden');
+        retryBtn.disabled = false;
+      }
     }
   }
 
@@ -901,6 +967,8 @@ export class DrivingApplication {
     const percent = Math.min(100, Math.round(progress * 100));
     const percentEl = document.getElementById('calibration-percent');
     if (percentEl) percentEl.textContent = `${percent}%`;
+    const ringEl = document.querySelector<HTMLElement>('.calibration-ring');
+    if (ringEl) ringEl.style.setProperty('--progress', `${Math.round((percent / 100) * 360)}deg`);
 
     const statusMsg = document.getElementById('calib-status-msg');
     const startBtn = document.getElementById('calib-start-btn') as HTMLButtonElement | null;
@@ -931,10 +999,14 @@ export class DrivingApplication {
       this.cameraShell?.classList.remove('is-calibrating');
       this.cameraShell?.classList.add('is-offline');
       this.setTracking('CAMERA UNAVAILABLE', 'off');
-      if (statusMsg) statusMsg.textContent = 'CAMERA ERROR — USE KEYBOARD';
-      this.mode = 'keyboard';
-      this.updateControlModeUi();
-      if (startBtn) startBtn.disabled = false;
+      if (statusMsg)
+        statusMsg.textContent = 'CAMERA UNAVAILABLE — CLICK RETRY CAMERA OR USE KEYBOARD';
+      this.cameraHint.textContent = 'CAMERA UNAVAILABLE';
+      const retryBtn = document.getElementById('calib-retry-btn') as HTMLButtonElement | null;
+      if (retryBtn) {
+        retryBtn.classList.remove('is-hidden');
+        retryBtn.disabled = false;
+      }
     }
   }
 
@@ -976,6 +1048,7 @@ export class DrivingApplication {
           this.cameraCanvas,
           (status, progress = 0) => this.onHandStatus(status, progress),
         );
+        this.handController.setGestureShiftingEnabled(this.gestureShiftingEnabled);
       }
       if (
         this.handController.getStatus() !== 'tracking' &&
@@ -1015,6 +1088,7 @@ export class DrivingApplication {
             this.cameraCanvas,
             (status, progress = 0) => this.onHandStatus(status, progress),
           );
+          this.handController.setGestureShiftingEnabled(this.gestureShiftingEnabled);
         }
         try {
           await this.handController.start();
@@ -1190,6 +1264,17 @@ export class DrivingApplication {
   //   PAUSE & SETTINGS DIALOGS
   // ══════════════════════════════════════════════════
 
+  private toggleTransmission(): void {
+    if (!this.game) return;
+    const mode = this.game.toggleTransmissionMode();
+    this.transmissionMode = mode;
+    progressionStore.setSelectedTransmissionMode(mode);
+    const transSelect = document.getElementById(
+      'settings-transmission-mode',
+    ) as HTMLSelectElement | null;
+    if (transSelect) transSelect.value = mode;
+  }
+
   private togglePause(): void {
     if (!this.game) return;
     const phase = this.game.getPhase();
@@ -1245,8 +1330,16 @@ export class DrivingApplication {
     if (!dialog) return;
     const modeSelect = document.getElementById('settings-control-mode') as HTMLSelectElement | null;
     const camSelect = document.getElementById('settings-camera-view') as HTMLSelectElement | null;
+    const transSelect = document.getElementById(
+      'settings-transmission-mode',
+    ) as HTMLSelectElement | null;
+    const gestureSelect = document.getElementById(
+      'settings-gesture-shift',
+    ) as HTMLSelectElement | null;
     if (modeSelect) modeSelect.value = this.mode;
     if (camSelect) camSelect.value = String(this.selectedCameraMode);
+    if (transSelect) transSelect.value = this.transmissionMode;
+    if (gestureSelect) gestureSelect.value = this.gestureShiftingEnabled ? 'enabled' : 'disabled';
     dialog.classList.remove('is-hidden');
   }
 
@@ -1346,6 +1439,11 @@ export class DrivingApplication {
       event.preventDefault();
       const zoom = this.radarHud.cycleZoom();
       this.updateRadarButton(zoom);
+      return;
+    }
+    if (event.code === 'KeyT') {
+      event.preventDefault();
+      this.toggleTransmission();
       return;
     }
     if (event.code !== 'Escape') return;

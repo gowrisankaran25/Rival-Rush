@@ -82,4 +82,15 @@ describe('ProgressionStore', () => {
     expect(RACE_MODES.traffic_challenge.targetOvertakes).toBe(12);
     expect(RACE_MODES.championship.objectives.length).toBeGreaterThan(0);
   });
+
+  it('persists and retrieves transmission mode and gesture shifting preferences', () => {
+    expect(store.getSelectedTransmissionMode()).toBe('manual');
+    expect(store.isGestureShiftingEnabled()).toBe(true);
+
+    store.setSelectedTransmissionMode('auto');
+    expect(store.getSelectedTransmissionMode()).toBe('auto');
+
+    store.setGestureShiftingEnabled(false);
+    expect(store.isGestureShiftingEnabled()).toBe(false);
+  });
 });

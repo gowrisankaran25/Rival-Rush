@@ -369,12 +369,14 @@ export class DrivingGame {
   private readonly shadowCenter = new THREE.Vector3();
   private readonly desiredCamera = new THREE.Vector3();
   private readonly cameraTarget = new THREE.Vector3();
+  private readonly smoothedCameraTarget = new THREE.Vector3();
   private phase: GamePhase = 'ready';
   private distance = 0;
   private speed = 0;
   private lateral: number = laneOffsets[1];
   private worldX = roadCenter(0) + Math.cos(roadHeading(0)) * laneOffsets[1];
   private vehicleHeading = roadHeading(0);
+  private yawRate = 0;
   private steeringVisual = 0;
   private overtakes = 0;
   private assistMessage = 'READY';
@@ -408,6 +410,7 @@ export class DrivingGame {
   private currentFov = BASE_FOV;
   private cameraMode = 0; // 0: Cockpit, 1: Hood, 2: Chase
   private currentGear = 3; // Default 3rd gear (Drive / Highway Cruise)
+  private transmissionMode: 'auto' | 'manual' = 'manual';
   private gearShiftCooldown = 0;
   private gearShiftSurge = 0;
   private tireSlip = 0;
@@ -729,21 +732,26 @@ export class DrivingGame {
     this.isShowroomDragging = false;
   }
 
-  shiftGear(direction: 1 | -1, force = false): number {
+  shiftGear(direction: 1 | -1, force = false, isAutomatic = false): number {
     if (!force && this.gearShiftCooldown > 0) {
       return this.currentGear;
     }
     const nextGear = Math.max(1, Math.min(GEAR_SPECS.length, this.currentGear + direction));
     if (nextGear !== this.currentGear) {
-      this.gearShiftCooldown = 0.35;
+      this.gearShiftCooldown = isAutomatic ? 1.4 : 0.35;
       this.currentGear = nextGear;
       const spec = GEAR_SPECS[this.currentGear - 1];
-      if (direction > 0) {
-        this.assistMessage = `${spec.name} ▲ BOOST (${spec.maxSpeedKph} KM/H)`;
-        this.gearShiftSurge = 0.08;
+      if (!isAutomatic) {
+        if (direction > 0) {
+          this.assistMessage = `${spec.name} ▲ BOOST (${spec.maxSpeedKph} KM/H)`;
+          this.gearShiftSurge = 0.05;
+        } else {
+          this.assistMessage = `${spec.name} ▼ BRAKE (${spec.maxSpeedKph} KM/H)`;
+          this.gearShiftSurge = -0.03;
+        }
       } else {
-        this.assistMessage = `${spec.name} ▼ BRAKE (${spec.maxSpeedKph} KM/H)`;
-        this.gearShiftSurge = -0.04;
+        // Automatic shifting is seamless and smooth without camera surges
+        this.gearShiftSurge = 0;
       }
       this.onGearShift?.(this.currentGear, direction);
     }
@@ -760,6 +768,24 @@ export class DrivingGame {
       this.onGearShift?.(this.currentGear, direction);
     }
     return this.currentGear;
+  }
+
+  getTransmissionMode(): 'auto' | 'manual' {
+    return this.transmissionMode;
+  }
+
+  setTransmissionMode(mode: 'auto' | 'manual'): void {
+    this.transmissionMode = mode;
+  }
+
+  toggleTransmissionMode(): 'auto' | 'manual' {
+    this.transmissionMode = this.transmissionMode === 'auto' ? 'manual' : 'auto';
+    const spec = GEAR_SPECS[this.currentGear - 1];
+    this.assistMessage =
+      this.transmissionMode === 'auto'
+        ? `TRANSMISSION: AUTO (${spec.name})`
+        : `TRANSMISSION: MANUAL (${spec.name})`;
+    return this.transmissionMode;
   }
 
   getCurrentGear(): number {
@@ -988,7 +1014,7 @@ export class DrivingGame {
     this.assistMessage = 'READY';
     this.hornCooldown = 0;
     this.phase = 'ready';
-    this.currentGear = 1;
+    this.currentGear = this.transmissionMode === 'auto' ? 1 : 3;
     this.gearShiftCooldown = 0;
     this.gearShiftSurge = 0;
     this.steeringVisual = 0;
@@ -1526,21 +1552,23 @@ export class DrivingGame {
     const currentGearSpec = GEAR_SPECS[this.currentGear - 1];
     const gearMaxSpeed = currentGearSpec.maxSpeedMs;
 
-    // Smart auto-transmission assist: smoothly upshift at optimal powerband peak
-    if (
-      control.accelerating &&
-      !control.braking &&
-      this.speed >= gearMaxSpeed * 0.86 &&
-      this.currentGear < GEAR_SPECS.length &&
-      this.gearShiftCooldown <= 0
-    ) {
-      this.shiftGear(1);
-    } else if (
-      this.currentGear > 1 &&
-      this.gearShiftCooldown <= 0 &&
-      this.speed < (GEAR_SPECS[this.currentGear - 2]?.maxSpeedMs ?? 0) * 0.72
-    ) {
-      this.shiftGear(-1);
+    // Smart auto-transmission assist: smoothly shifts gears ONLY when transmissionMode is 'auto'
+    if (this.transmissionMode === 'auto') {
+      if (
+        control.accelerating &&
+        !control.braking &&
+        this.speed >= gearMaxSpeed * 0.9 &&
+        this.currentGear < GEAR_SPECS.length &&
+        this.gearShiftCooldown <= 0
+      ) {
+        this.shiftGear(1, false, true);
+      } else if (
+        this.currentGear > 1 &&
+        this.gearShiftCooldown <= 0 &&
+        this.speed < (GEAR_SPECS[this.currentGear - 2]?.maxSpeedMs ?? 0) * 0.5
+      ) {
+        this.shiftGear(-1, false, true);
+      }
     }
     const curveLimit = curveSpeedLimit(this.distance, gearMaxSpeed, GAME.minCurveSpeed);
     const conceptDriver = this.driverCar === 'luxury-concept';
@@ -1585,11 +1613,11 @@ export class DrivingGame {
     this.speed = damp(this.speed, targetSpeed, accelLambda, dt);
     if (targetSpeed === 0 && Math.abs(this.speed) < 0.3) this.speed = 0;
 
-    this.steeringVisual = damp(this.steeringVisual, control.steering, 20, dt);
+    this.steeringVisual = damp(this.steeringVisual, control.steering, 16, dt);
 
     // Progressive non-linear steering response curve:
-    // Gentle 1.15 power curve provides solid center-line stability without lag or dead zones.
-    const progressiveSteer = progressiveSteering(this.steeringVisual, 1.15);
+    // 1.35 power curve provides solid center-line stability without micro-tremors or twitchiness
+    const progressiveSteer = progressiveSteering(this.steeringVisual, 1.35);
 
     // Speed-sensitive steering authority & tire grip dynamics:
     const lowSpeedRamp = clamp(Math.abs(this.speed) / 6.0, 0.35, 1.0);
@@ -1621,14 +1649,16 @@ export class DrivingGame {
     );
 
     // Natural caster self-aligning torque:
-    // When the driver holds neutral/gentle steering, vehicle heading stabilizes along highway curves.
-    // When the driver turns firmly for an evasive lane change, alignment yields 100% authority to the player.
+    // Smooth power curve yields seamless alignment without snap-oversteer
     if (Math.abs(this.speed) > 1.0) {
-      const alignTorque = (1.0 - Math.min(1.0, Math.abs(this.steeringVisual) * 1.3)) * 3.2;
+      const alignFactor = clamp(1.0 - Math.pow(Math.abs(this.steeringVisual), 1.4), 0, 1);
+      const alignTorque = alignFactor * 2.8;
       this.vehicleHeading += headingDiff * alignTorque * dt;
     }
 
-    this.vehicleHeading -= effectiveTurnRate * dt;
+    // Vehicle chassis yaw rate inertia (eliminates high-frequency camera-tracking flutter):
+    this.yawRate = damp(this.yawRate, effectiveTurnRate, 14.0, dt);
+    this.vehicleHeading -= this.yawRate * dt;
 
     // Lateral drift from tire slip on wet/flooded/icy asphalt:
     const slipDrift = Math.sign(this.steeringVisual) * this.tireSlip * 1.6 * dt;
@@ -1976,7 +2006,13 @@ export class DrivingGame {
         .copy(this.player.position)
         .addScaledVector(this.forward, camConfig.lookAhead);
       this.cameraTarget.y = this.player.position.y + camConfig.lookHeight + pitchOffset;
-      this.camera.lookAt(this.cameraTarget);
+
+      if (this.smoothedCameraTarget.lengthSq() === 0) {
+        this.smoothedCameraTarget.copy(this.cameraTarget);
+      } else {
+        this.smoothedCameraTarget.lerp(this.cameraTarget, 1 - Math.exp(-15 * dt));
+      }
+      this.camera.lookAt(this.smoothedCameraTarget);
 
       // Subtle lateral G-force body roll on steering turns
       const rollScale = camConfig.showCar ? 0.65 : 1.0;
@@ -2208,6 +2244,7 @@ export class DrivingGame {
         currentGear: this.currentGear,
         gearLabel: GEAR_SPECS[this.currentGear - 1].label,
         gearMaxKph: GEAR_SPECS[this.currentGear - 1].maxSpeedKph,
+        transmissionMode: this.transmissionMode,
         radar: this.getRadarTelemetry(),
         roadCondition: this.weatherSystem.getRoadCondition(this.speed * 3.6, this.tireSlip),
         headlightMode: this.headlightMode,

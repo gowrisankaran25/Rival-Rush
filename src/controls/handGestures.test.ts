@@ -117,5 +117,11 @@ describe('hand gestures', () => {
     expect(isClosedHand(points)).toBe(true); // steering grip maintained!
     expect(isIndexExtended(createFist('folded'))).toBe(false);
     expect(isIndexExtended(createOpenPalm())).toBe(false);
+
+    // Ensure normal steering angles with closed fists do not falsely trigger paddle shifts
+    for (const angle of [-Math.PI / 4, 0, Math.PI / 4]) {
+      expect(isIndexExtended(rotateHand(createFist('folded'), angle))).toBe(false);
+      expect(isIndexExtended(rotateHand(createOpenPalm(), angle))).toBe(false);
+    }
   });
 });
