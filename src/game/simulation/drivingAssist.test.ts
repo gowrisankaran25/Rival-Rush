@@ -39,7 +39,7 @@ describe('driving assistance', () => {
     expect(plan.assistMessage).toBe('HANDS LOST · AUTO BRAKE');
   });
 
-  it('uses emergency braking for close oncoming traffic', () => {
+  it('uses emergency braking for close oncoming traffic in cruise mode', () => {
     const plan = createSpeedPlan({ steering: 0, confidence: 1, active: true }, 25, GAME.maxSpeed, {
       targetSpeed: 5,
       leadDistance: 20,
@@ -48,6 +48,27 @@ describe('driving assistance', () => {
 
     expect(plan.acceleration).toBe(GAME.emergencyBrake);
     expect(plan.assistMessage).toBe('ONCOMING · EMERGENCY BRAKE');
+  });
+
+  it('preserves driver acceleration authority without emergency braking when driver accelerates', () => {
+    const plan = createSpeedPlan(
+      { steering: 0, confidence: 1, active: true, accelerating: true },
+      30,
+      GAME.maxSpeed,
+      {
+        targetSpeed: 0,
+        leadDistance: 12,
+        leadIsIncoming: true,
+      },
+      GAME.maxSpeed,
+      1.5,
+    );
+
+    // Should accelerate with driver intent, never emergency brake
+    expect(plan.safetyBraking).toBe(false);
+    expect(plan.targetSpeed).toBe(GAME.maxSpeed);
+    expect(plan.acceleration).toBeGreaterThan(0);
+    expect(plan.assistMessage).not.toContain('EMERGENCY BRAKE');
   });
 
   it('scales braking force with the requested brake level', () => {

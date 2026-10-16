@@ -124,4 +124,12 @@ describe('hand gestures', () => {
       expect(isIndexExtended(rotateHand(createOpenPalm(), angle))).toBe(false);
     }
   });
+
+  it('ensures extending index finger for paddle gear shifting does not trigger false braking', () => {
+    // When shifting gears up into 6th gear, index is extended while thumb might be raised
+    const points = createFist('up');
+    points[8] = { x: 0.35, y: 0.28, z: 0 }; // index tip extended
+    expect(isIndexExtended(points)).toBe(true);
+    expect(isThumbUp(points)).toBe(false); // must not falsely trigger brake!
+  });
 });

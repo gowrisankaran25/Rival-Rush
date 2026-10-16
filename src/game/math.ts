@@ -106,8 +106,8 @@ export function speedSensitiveSteering(
   speedMs: number,
   baseAuthority = 0.95,
 ): number {
-  const speedScale = 1 / (1 + Math.max(0, speedMs - 8) * 0.022);
-  return steering * baseAuthority * speedScale;
+  const speedScale = 1 / (1 + Math.max(0, speedMs - 8) * 0.018);
+  return steering * baseAuthority * Math.max(0.48, speedScale);
 }
 
 export function curveSpeedLimit(distance: number, maxSpeed: number, minSpeed: number): number {

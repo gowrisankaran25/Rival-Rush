@@ -103,9 +103,10 @@ export function createSpeedPlan(
         targetSpeed = 0;
         acceleration = GAME.serviceBrake * brakeScale;
       } else {
-        const emergency = isEmergency(leadDistance, leadIsIncoming);
-        targetSpeed = emergency ? Math.min(threat.targetSpeed, maxAllowedSpeed) : maxAllowedSpeed;
-        safetyBraking = emergency;
+        // Active manual throttle: driver has full authority. Never force emergency braking
+        // when player is actively accelerating to overtake or sprint across bridges.
+        targetSpeed = maxAllowedSpeed;
+        safetyBraking = false;
         // Standing start launch boost ensures instantaneous response from 0 km/h
         const launchBoost =
           currentSpeed < 14 ? lerp(2.2, 1.0, clamp(currentSpeed / 14, 0, 1)) : 1.0;
@@ -156,15 +157,25 @@ function describeAssist(
   const manualControl =
     control.accelerating !== undefined || control.braking !== undefined || brakePressure > 0;
   if (!control.active) return 'HANDS LOST · AUTO BRAKE';
+
+  // Manual braking has priority
+  if (manualControl && brakePressure > 0) {
+    return currentSpeed < 1.0 && !control.accelerating
+      ? 'REVERSING'
+      : `BRAKING ${Math.round(brakePressure * 100)}%`;
+  }
+
+  // Active manual acceleration: driver has full throttle authority
+  if (manualControl && control.accelerating) {
+    if (leadIsIncoming && leadDistance < 50) return '⚠️ ONCOMING VEHICLE';
+    return 'ACCELERATING';
+  }
+
+  // Cruise / Auto-drive assists (when player is not actively pressing throttle):
   if (leadIsIncoming && leadDistance < 70) {
     return leadDistance < 28 ? 'ONCOMING · EMERGENCY BRAKE' : 'ONCOMING VEHICLE';
   }
   if (leadDistance < 32) return leadDistance < 15 ? 'EMERGENCY BRAKE' : 'TRAFFIC ASSIST';
   if (curveSpeedLimit < GAME.maxSpeed - 4) return 'CURVE ASSIST';
-  if (manualControl && brakePressure > 0)
-    return currentSpeed < 1.0 && !control.accelerating
-      ? 'REVERSING'
-      : `BRAKING ${Math.round(brakePressure * 100)}%`;
-  if (manualControl && control.accelerating) return 'ACCELERATING';
   return manualControl ? 'COASTING' : 'CRUISING';
 }

@@ -56,9 +56,17 @@ export function isOpenPalm(landmarks: HandPoint[]): boolean {
 }
 
 export function isThumbUp(landmarks: HandPoint[]): boolean {
-  if (!isClosedHand(landmarks)) return false;
+  if (landmarks.length < 21) return false;
+  if (isIndexExtended(landmarks)) return false;
 
   const wrist = landmarks[0];
+  const indexTip = landmarks[8];
+  const indexMcp = landmarks[5];
+  // Index must remain folded to qualify as a brake fist gesture
+  if (pointDistance(indexTip, wrist) > pointDistance(indexMcp, wrist) * 1.35) return false;
+
+  if (!isClosedHand(landmarks)) return false;
+
   const thumbMcp = landmarks[2];
   const thumbIp = landmarks[3];
   const thumbTip = landmarks[4];

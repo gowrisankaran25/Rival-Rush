@@ -706,7 +706,23 @@ export class DrivingGame {
     this.cameraMode = (this.cameraMode + 1) % CAMERA_CONFIGS.length;
     const mode = CAMERA_CONFIGS[this.cameraMode];
     this.assistMessage = `CAM: ${mode.name} [C]`;
-    if (this.phase === 'ready') this.setupInitialCamera();
+    this.player.visible = mode.showCar;
+    this.player.traverse((child) => {
+      child.visible = mode.showCar;
+    });
+    if (this.phase === 'ready') {
+      this.setupInitialCamera();
+    } else {
+      this.forward.set(-Math.sin(this.vehicleHeading), 0, -Math.cos(this.vehicleHeading));
+      this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, mode.lookAhead);
+      this.cameraTarget.y = this.player.position.y + mode.lookHeight;
+      this.smoothedCameraTarget.copy(this.cameraTarget);
+      if (!mode.showCar) {
+        this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -mode.camBack);
+        this.desiredCamera.y = this.player.position.y + mode.camHeight;
+        this.camera.position.copy(this.desiredCamera);
+      }
+    }
     return mode.name;
   }
 
@@ -714,7 +730,23 @@ export class DrivingGame {
     this.cameraMode = Math.max(0, Math.min(CAMERA_CONFIGS.length - 1, modeIndex));
     const mode = CAMERA_CONFIGS[this.cameraMode];
     this.assistMessage = `CAM: ${mode.name} [C]`;
-    if (this.phase === 'ready') this.setupInitialCamera();
+    this.player.visible = mode.showCar;
+    this.player.traverse((child) => {
+      child.visible = mode.showCar;
+    });
+    if (this.phase === 'ready') {
+      this.setupInitialCamera();
+    } else {
+      this.forward.set(-Math.sin(this.vehicleHeading), 0, -Math.cos(this.vehicleHeading));
+      this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, mode.lookAhead);
+      this.cameraTarget.y = this.player.position.y + mode.lookHeight;
+      this.smoothedCameraTarget.copy(this.cameraTarget);
+      if (!mode.showCar) {
+        this.desiredCamera.copy(this.player.position).addScaledVector(this.forward, -mode.camBack);
+        this.desiredCamera.y = this.player.position.y + mode.camHeight;
+        this.camera.position.copy(this.desiredCamera);
+      }
+    }
     return mode.name;
   }
 
@@ -1081,7 +1113,16 @@ export class DrivingGame {
     let ongoingCursor = 45;
     let incomingCursor = 62;
     this.traffic.forEach((car, index) => {
-      car.direction = index === 0 ? 1 : index === 1 ? -1 : Math.random() < 0.56 ? 1 : -1;
+      const isTimeAttack = this.currentRaceMode === 'time_attack';
+      car.direction = isTimeAttack
+        ? 1
+        : index === 0
+          ? 1
+          : index === 1
+            ? -1
+            : Math.random() < 0.56
+              ? 1
+              : -1;
       if (car.direction === 1) {
         ongoingCursor += 34 + Math.random() * 48;
         this.spawnTraffic(car, ongoingCursor);
@@ -1464,7 +1505,9 @@ export class DrivingGame {
   }
 
   private spawnTraffic(car: TrafficCar, ahead?: number, randomizeDirection = false): void {
-    if (randomizeDirection) car.direction = Math.random() < 0.56 ? 1 : -1;
+    if (randomizeDirection) {
+      car.direction = this.currentRaceMode === 'time_attack' ? 1 : Math.random() < 0.56 ? 1 : -1;
+    }
     let candidateLane = car.direction === 1 ? (Math.random() < 0.5 ? 0 : 1) : 2;
     const minAhead = car.direction === 1 ? 85 : 110;
     const furthest = this.traffic
@@ -1622,7 +1665,7 @@ export class DrivingGame {
     );
     const { targetSpeed, acceleration, safetyBraking } = speedPlan;
     this.assistMessage = speedPlan.assistMessage;
-    this.isPlayerBraking = safetyBraking || control.braking === true;
+    this.isPlayerBraking = control.braking === true || (!control.accelerating && safetyBraking);
     this.setVehicleBrake(this.player, this.isPlayerBraking);
     const accelLambda = Math.max(
       3.2,
@@ -1631,7 +1674,7 @@ export class DrivingGame {
     this.speed = damp(this.speed, targetSpeed, accelLambda, dt);
     if (targetSpeed === 0 && Math.abs(this.speed) < 0.3) this.speed = 0;
 
-    this.steeringVisual = damp(this.steeringVisual, control.steering, 16, dt);
+    this.steeringVisual = damp(this.steeringVisual, control.steering, 28, dt);
 
     // Progressive non-linear steering response curve:
     // 1.35 power curve provides solid center-line stability without micro-tremors or twitchiness
@@ -1667,15 +1710,15 @@ export class DrivingGame {
     );
 
     // Natural caster self-aligning torque:
-    // Smooth power curve yields seamless alignment without snap-oversteer
+    // Yields authority smoothly when driver steers actively, preventing caster fighting in 6th gear
     if (Math.abs(this.speed) > 1.0) {
-      const alignFactor = clamp(1.0 - Math.pow(Math.abs(this.steeringVisual), 1.4), 0, 1);
-      const alignTorque = alignFactor * 2.8;
+      const alignFactor = clamp(1.0 - Math.abs(this.steeringVisual) * 2.8, 0, 1);
+      const alignTorque = alignFactor * 2.4;
       this.vehicleHeading += headingDiff * alignTorque * dt;
     }
 
-    // Vehicle chassis yaw rate inertia (eliminates high-frequency camera-tracking flutter):
-    this.yawRate = damp(this.yawRate, effectiveTurnRate, 14.0, dt);
+    // Vehicle chassis yaw rate inertia:
+    this.yawRate = damp(this.yawRate, effectiveTurnRate, 22.0, dt);
     this.vehicleHeading -= this.yawRate * dt;
 
     // Lateral drift from tire slip on wet/flooded/icy asphalt:
@@ -1776,7 +1819,7 @@ export class DrivingGame {
     this.roadUpdateElapsed += dt;
     const roadJumped =
       !Number.isFinite(this.lastRoadUpdateDistance) ||
-      Math.abs(this.distance - this.lastRoadUpdateDistance) > 5;
+      Math.abs(this.distance - this.lastRoadUpdateDistance) > 16;
     if (roadJumped || this.roadUpdateElapsed >= ROAD_UPDATE_INTERVAL) {
       const start = Math.max(-40, this.distance - GAME.lookBehind);
       const length = GAME.lookAhead + GAME.lookBehind + 150;
@@ -1847,8 +1890,6 @@ export class DrivingGame {
       }
     }
 
-    this.highwayScenery.update(this.distance);
-
     for (const item of this.interactables) {
       if (!item.active) continue;
       const gap = item.distance - this.distance;
@@ -1882,8 +1923,10 @@ export class DrivingGame {
           ? BASE_FOV + (this.currentGear - 4) * 6
           : BASE_FOV;
     this.currentFov = damp(this.currentFov, targetFov, 5, dt);
-    this.camera.fov = this.currentFov;
-    this.camera.updateProjectionMatrix();
+    if (Math.abs(this.camera.fov - this.currentFov) > 0.01) {
+      this.camera.fov = this.currentFov;
+      this.camera.updateProjectionMatrix();
+    }
 
     for (const mountain of this.mountains) {
       const slot = mountain.userData.slot as number;
@@ -2015,22 +2058,31 @@ export class DrivingGame {
       this.camera.lookAt(this.cameraTarget);
       this.camera.rotation.z = 0;
     } else {
-      // Smooth position tracking (graceful chase follow or tight front tracking)
-      const lerpRate = camConfig.showCar ? 11 : 14;
-      this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-lerpRate * dt));
-
       // Look directly ahead toward target
       this.cameraTarget
         .copy(this.player.position)
         .addScaledVector(this.forward, camConfig.lookAhead);
       this.cameraTarget.y = this.player.position.y + camConfig.lookHeight + pitchOffset;
 
-      if (this.smoothedCameraTarget.lengthSq() === 0) {
-        this.smoothedCameraTarget.copy(this.cameraTarget);
+      if (!camConfig.showCar) {
+        // Cockpit, hood, and bumper camera mounts are attached directly to the chassis
+        // to completely eliminate longitudinal rubber-banding and high-speed motion lag
+        this.camera.position.copy(this.desiredCamera);
+        this.camera.lookAt(this.cameraTarget);
       } else {
-        this.smoothedCameraTarget.lerp(this.cameraTarget, 1 - Math.exp(-15 * dt));
+        // Chase camera views: dynamically scale follow rate with vehicle speed so the camera
+        // stays stable and doesn't stretch or rubber-band at 260+ km/h in top gear
+        const dynamicFollowRate = 18 + (this.speed / gearMaxSpeed) * 16;
+        this.camera.position.lerp(this.desiredCamera, 1 - Math.exp(-dynamicFollowRate * dt));
+
+        if (this.smoothedCameraTarget.lengthSq() === 0) {
+          this.smoothedCameraTarget.copy(this.cameraTarget);
+        } else {
+          const dynamicTargetRate = 22 + (this.speed / gearMaxSpeed) * 14;
+          this.smoothedCameraTarget.lerp(this.cameraTarget, 1 - Math.exp(-dynamicTargetRate * dt));
+        }
+        this.camera.lookAt(this.smoothedCameraTarget);
       }
-      this.camera.lookAt(this.smoothedCameraTarget);
 
       // Subtle lateral G-force body roll on steering turns
       const rollScale = camConfig.showCar ? 0.65 : 1.0;
@@ -2439,6 +2491,7 @@ export class DrivingGame {
     this.cameraTarget.copy(this.player.position).addScaledVector(this.forward, camConfig.lookAhead);
     this.cameraTarget.y = this.player.position.y + camConfig.lookHeight;
     this.camera.lookAt(this.cameraTarget);
+    this.smoothedCameraTarget.copy(this.cameraTarget);
     this.cameraRoll = 0;
   }
 }

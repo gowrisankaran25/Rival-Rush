@@ -44,6 +44,9 @@ describe('driving math', () => {
     const lowSpeedRate = speedSensitiveSteering(1.0, 5); // 18 km/h
     const highSpeedRate = speedSensitiveSteering(1.0, 55); // ~200 km/h
     expect(highSpeedRate).toBeLessThan(lowSpeedRate * 0.6);
+    // Gear 6 (~260 km/h / 72.2 m/s) retains adequate turning authority for highway curves
+    const gear6Rate = speedSensitiveSteering(1.0, 72.2);
+    expect(gear6Rate).toBeGreaterThanOrEqual(0.45);
   });
 
   it('reduces target speed for upcoming curvature', () => {

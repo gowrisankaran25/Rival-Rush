@@ -15,7 +15,7 @@ import {
 import type { HandTrackingResult, HandWorkerInput, HandWorkerOutput } from './handWorkerTypes';
 
 type TrackingStatus = 'idle' | 'loading' | 'ready' | 'calibrating' | 'tracking' | 'lost' | 'error';
-const INFERENCE_INTERVAL_MS = 1000 / 24;
+const INFERENCE_INTERVAL_MS = 1000 / 30;
 const PREVIEW_INTERVAL_MS = 1000 / 20;
 const DROPOUT_GRACE_MS = 1200;
 const CALIBRATION_FRAMES = 10;
@@ -72,6 +72,7 @@ export class HandController {
   private lastTwoHandSeenTime = 0;
   private singleHandFrames = 0;
   private lastRawSteering = 0;
+  private lastResultTime = 0;
   private previewVisible = true;
   private lastPreviewTime = 0;
   private previewContext: CanvasRenderingContext2D | null = null;
@@ -259,6 +260,7 @@ export class HandController {
   beginCalibration(): void {
     this.calibrationAngles = [];
     this.resetBrakeGesture();
+    this.lastResultTime = 0;
     this.setStatus('calibrating', 0);
   }
 
@@ -314,6 +316,7 @@ export class HandController {
     }
     this.landmarker?.close();
     this.landmarker = null;
+    this.lastResultTime = 0;
   }
 
   setPaused(paused: boolean): void {
@@ -364,11 +367,11 @@ export class HandController {
     )
       return;
     this.lastVideoTime = this.video.currentTime;
-    this.lastInferenceTime = now;
 
     if (this.worker) {
       if (this.frameInFlight) return;
       this.frameInFlight = true;
+      this.lastInferenceTime = now;
 
       // Downscale to 320x240 at capture time: uses hardware GPU scaling and reduces
       // memory transfer by 96% so the main thread and Three.js run at full 60 FPS!
@@ -399,6 +402,7 @@ export class HandController {
     }
 
     if (this.landmarker) {
+      this.lastInferenceTime = now;
       const result = this.serializeResult(this.landmarker.detectForVideo(this.video, now));
       this.consumeResult(result);
       this.drawPreview(result);
@@ -455,8 +459,11 @@ export class HandController {
 
   private consumeResult(result: HandTrackingResult): void {
     const now = performance.now();
-    const dt = clamp((now - (this.lastInferenceTime || now - 33)) / 1000, 0.016, 0.08);
-    this.lastInferenceTime = now;
+    const dt =
+      this.lastResultTime > 0
+        ? clamp((now - this.lastResultTime) / 1000, 0.016, 0.1)
+        : INFERENCE_INTERVAL_MS / 1000;
+    this.lastResultTime = now;
 
     if (result.landmarks.length === 0) {
       this.singleHandFrames = 0;
@@ -515,7 +522,7 @@ export class HandController {
         Math.abs(lateralOffset) < 0.04 ? 0 : lateralOffset - Math.sign(lateralOffset) * 0.04;
       const wristTilt = Math.atan2(middleMcp.x - wrist.x, -(middleMcp.y - wrist.y));
       const rawSteering = clamp(-deadzoneOffset * 1.8 + wristTilt * 0.6, -1, 1);
-      const smoothedSteering = damp(this.input.steering, rawSteering, 10.0, dt);
+      const smoothedSteering = damp(this.input.steering, rawSteering, 18.0, dt);
       const score = result.handednessScores[0] ?? 0.7;
 
       const thumbBrake = isThumbUp(handLandmarks);
@@ -592,9 +599,9 @@ export class HandController {
     const rawBrakePressure = thumbBraking ? 1 : 0;
     const braking = this.brakeGesture.update(rawBrakePressure > 0, now);
 
-    // Adaptive smoothing: buttery smooth for straight roads (lambda ~9), responsive for sharp turns (lambda ~22)
+    // Adaptive smoothing: buttery smooth for straight roads, fast and responsive for turns
     const steeringDelta = Math.abs(raw - this.input.steering);
-    const adaptiveLambda = lerp(9.0, 22.0, clamp((steeringDelta - 0.05) / 0.25, 0, 1));
+    const adaptiveLambda = lerp(16.0, 32.0, clamp((steeringDelta - 0.04) / 0.22, 0, 1));
     const smoothedSteering = damp(this.input.steering, raw, adaptiveLambda, dt);
 
     if (this.status === 'calibrating') {
