@@ -55,20 +55,20 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     description:
       'A blisteringly fast 2,500m sprint course against a strict countdown timer. Precision cornering and gear shifting are required to take Gold.',
     distanceMeters: 2500,
-    timeLimitSeconds: 60,
+    timeLimitSeconds: 72,
     targetOvertakes: null,
     hasRival: false,
     defaultTrafficCount: 3,
     baseRewardCredits: 800,
     objectives: [
-      'Reach the finish line in under 60 seconds',
+      'Reach the finish line before time expires',
       'Shift into 6th gear on the back straight',
       'Take zero collision damage',
     ],
     medalCriteria: {
       gold: 'Finish under 48.0s',
-      silver: 'Finish under 54.0s',
-      bronze: 'Finish before 60.0s time runs out',
+      silver: 'Finish under 58.0s',
+      bronze: 'Finish before 72.0s time runs out',
     },
   },
   rival_race: {
@@ -79,7 +79,7 @@ export const RACE_MODES: Record<RaceModeId, RaceModeConfig> = {
     description:
       'Go bumper-to-bumper across 2,000 meters against an elite AI competitor in a tuned supercar. Take the lead and cross the line 1st for glory.',
     distanceMeters: 2000,
-    timeLimitSeconds: 70,
+    timeLimitSeconds: 85,
     targetOvertakes: null,
     hasRival: true,
     rivalCarModel: 'ford-gt40',

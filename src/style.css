@@ -4018,23 +4018,24 @@ h2 {
 /* Approach Alert Banner */
 .approach-alert {
   position: absolute;
-  top: 96px;
+  top: 182px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 15;
-  background: rgba(10, 14, 20, 0.9);
+  z-index: 50;
+  background: rgba(10, 14, 20, 0.92);
   border: 2px solid var(--acid);
   border-radius: 6px;
   padding: 8px 24px;
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 900;
   letter-spacing: 0.1em;
   color: var(--acid);
-  box-shadow: 0 0 20px rgba(233, 255, 66, 0.3);
+  box-shadow: 0 0 24px rgba(233, 255, 66, 0.35);
   animation: alertPulse 1.2s infinite;
+  pointer-events: none;
 }
 
 @keyframes alertPulse {

@@ -2236,7 +2236,17 @@ export class DrivingGame {
     ) {
       this.raceTimeSeconds += dt;
       if (this.timeLimitSeconds && this.raceTimeSeconds >= this.timeLimitSeconds) {
-        this.triggerFinishLineCrossed(false);
+        const remainingDist =
+          this.finishDistance !== null ? this.finishDistance - this.distance : Infinity;
+        const inFinalSprint = remainingDist <= 70 && this.speed > 6;
+        if (inFinalSprint && this.raceTimeSeconds < this.timeLimitSeconds + 3.0) {
+          // Final sprint momentum grace: player is actively sprinting across the line
+          if (remainingDist <= 0) {
+            this.triggerFinishLineCrossed(true);
+          }
+        } else {
+          this.triggerFinishLineCrossed(false);
+        }
       } else if (this.finishDistance !== null) {
         const remaining = this.finishDistance - this.distance;
         if (remaining <= 0) {
@@ -2256,6 +2266,7 @@ export class DrivingGame {
       }
       this.updateSimulation(dt);
     } else if (this.phase === 'finishing') {
+      this.approachWarning = null;
       this.speed = damp(this.speed, 0, 1.8, dt);
       this.distance += this.speed * dt;
       this.finishEaseTimer += dt;
